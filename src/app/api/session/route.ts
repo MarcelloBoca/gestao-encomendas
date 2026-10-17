@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import type { DecodedIdToken } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
-import { adminAuth, db, describeFirebaseError } from "@/lib/firebase-admin";
+import { adminAuth, db, describeFirebaseError, withTimeout } from "@/lib/firebase-admin";
 import { SESSION_COOKIE, SESSION_MAX_AGE_MS } from "@/lib/session";
 import { col } from "@/lib/server/repo";
 import { writeAudit } from "@/lib/server/tx";
@@ -34,16 +35,20 @@ export async function POST(request: Request) {
   if (!idToken) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
 
   try {
-    const decoded = await adminAuth().verifyIdToken(idToken);
+    const decoded: DecodedIdToken = await withTimeout(adminAuth().verifyIdToken(idToken), 10_000, "Verificação do login Google");
     if (Date.now() / 1000 - decoded.auth_time > 5 * 60) {
       return NextResponse.json({ error: "Inicie sessão novamente." }, { status: 401 });
     }
     if (!decoded.email || decoded.email_verified === false) {
       return NextResponse.json({ error: "A conta Google não tem um email verificado." }, { status: 403 });
     }
-    const sessionCookie = await adminAuth().createSessionCookie(idToken, { expiresIn: SESSION_MAX_AGE_MS });
+    const sessionCookie: string = await withTimeout(
+      adminAuth().createSessionCookie(idToken, { expiresIn: SESSION_MAX_AGE_MS }),
+      10_000,
+      "Criação da sessão",
+    );
     const name = typeof decoded.name === "string" ? decoded.name : decoded.email;
-    await acceptPendingInvite(decoded.uid, decoded.email, name);
+    await withTimeout(acceptPendingInvite(decoded.uid, decoded.email, name), 10_000, "Firestore");
 
     const response = NextResponse.json({ ok: true });
     response.cookies.set(SESSION_COOKIE, sessionCookie, {
@@ -59,6 +64,12 @@ export async function POST(request: Request) {
     console.error("Falha no início de sessão", message);
     const setup = describeFirebaseError(error);
     if (setup) return NextResponse.json({ error: setup }, { status: 500 });
+    if (message.includes("sem resposta em")) {
+      return NextResponse.json(
+        { error: `${message}. Verifique se o Firestore foi criado e se a chave do servidor no Vercel é a do projeto gestao-encomendas-2a060.` },
+        { status: 504 },
+      );
+    }
     return NextResponse.json({ error: "Não foi possível iniciar sessão. Tente de novo." }, { status: 401 });
   }
 }

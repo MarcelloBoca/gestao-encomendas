@@ -64,3 +64,21 @@ export function describeFirebaseError(error: unknown): string | null {
   }
   return null;
 }
+
+/** Pede um token de acesso ao Google com a conta de serviço (testa só a chave, sem Firestore nem Auth). */
+export async function serviceAccountToken(): Promise<number> {
+  const app = getAdminApp();
+  const credential = app.options.credential;
+  if (!credential) throw new Error("Credencial do Firebase Admin em falta.");
+  const token = await credential.getAccessToken();
+  return token.expires_in;
+}
+
+/** Rejeita se a promessa não terminar a tempo, para mostrar um erro em vez de ficar à espera. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}: sem resposta em ${Math.round(ms / 1000)} s`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
