@@ -21,6 +21,10 @@ function friendlyError(error: unknown): string {
   if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") return "";
   if (code === "auth/network-request-failed") return "Sem ligação à internet. Verifique a rede e tente de novo.";
   if (code === "auth/unauthorized-domain") return "Este endereço ainda não está autorizado no Firebase (Authentication › Settings › Authorized domains).";
+  if (code === "auth/operation-not-allowed" || code === "auth/configuration-not-found") {
+    return "O início de sessão com Google não está ativo no Firebase (Authentication › Sign-in method › Google).";
+  }
+  if (code === "auth/popup-blocked") return "O navegador bloqueou a janela do Google. Permita janelas para este site e tente de novo.";
   return "Não foi possível entrar com o Google. Tente de novo.";
 }
 

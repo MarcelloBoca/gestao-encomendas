@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { adminAuth, db } from "@/lib/firebase-admin";
+import { adminAuth, db, describeFirebaseError } from "@/lib/firebase-admin";
 import { SESSION_COOKIE, SESSION_MAX_AGE_MS } from "@/lib/session";
 import { col } from "@/lib/server/repo";
 import { writeAudit } from "@/lib/server/tx";
@@ -56,9 +56,8 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Falha no início de sessão", message);
-    if (message.startsWith("Configuração do Firebase")) {
-      return NextResponse.json({ error: message }, { status: 500 });
-    }
+    const setup = describeFirebaseError(error);
+    if (setup) return NextResponse.json({ error: setup }, { status: 500 });
     return NextResponse.json({ error: "Não foi possível iniciar sessão. Tente de novo." }, { status: 401 });
   }
 }

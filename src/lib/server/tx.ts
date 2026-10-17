@@ -7,7 +7,7 @@ import {
   type DocumentReference,
   type Transaction,
 } from "firebase-admin/firestore";
-import { db } from "../firebase-admin";
+import { db, describeFirebaseError } from "../firebase-admin";
 import { UserError, allocateFifo, awaitingKey, fulfillmentFromLines, type WaitingOrder } from "../domain";
 import type { ActionState, MovementType, Order, OrderLine } from "../types";
 import { col, linesForWrite, orderFromSnap } from "./repo";
@@ -177,8 +177,8 @@ export function nowTs(): Timestamp {
 /** Converte erros em mensagens para o formulário. */
 export function toActionError(error: unknown): ActionState {
   if (error instanceof UserError) return { error: error.message };
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.startsWith("Configuração do Firebase")) return { error: message };
+  const setup = describeFirebaseError(error);
+  if (setup) return { error: setup };
   console.error(error);
   return { error: "Não foi possível gravar. Verifique a ligação e tente de novo." };
 }
