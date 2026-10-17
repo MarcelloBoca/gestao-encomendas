@@ -7,7 +7,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { db } from "@/lib/firebase-admin";
 import { DEFAULT_TZ } from "@/lib/dates";
 import { UserError } from "@/lib/domain";
-import { STORE_COOKIE, getContext, requireSessionUser } from "@/lib/session";
+import { STORE_COOKIE, forgetContext, getContext, requireSessionUser } from "@/lib/session";
 import { col } from "@/lib/server/repo";
 import { required, text, toActionError, writeAudit } from "@/lib/server/tx";
 import type { ActionState } from "@/lib/types";
@@ -65,6 +65,7 @@ export async function createBusiness(_prev: ActionState, fd: FormData): Promise<
   } catch (error) {
     return toActionError(error);
   }
+  forgetContext();
   revalidatePath("/", "layout");
   redirect("/");
 }
@@ -91,6 +92,7 @@ export async function acceptInvite(_prev: ActionState, fd: FormData): Promise<Ac
   } catch (error) {
     return toActionError(error);
   }
+  forgetContext();
   revalidatePath("/", "layout");
   redirect("/");
 }
@@ -100,6 +102,7 @@ export async function renameBusiness(_prev: ActionState, fd: FormData): Promise<
     const ctx = await getContext();
     const name = required(fd, "name", "O nome do negócio", 120);
     await db().collection("businesses").doc(ctx.businessId).update({ name });
+    forgetContext();
     revalidatePath("/", "layout");
     return { ok: true, message: "Nome do negócio guardado." };
   } catch (error) {
@@ -120,6 +123,7 @@ export async function saveStore(_prev: ActionState, fd: FormData): Promise<Actio
       if (ctx.stores.some((s) => s.prefix === prefix)) throw new UserError(`O prefixo ${prefix} já é usado por outra loja.`);
       await col.stores(ctx.businessId).add({ name, prefix, counter: 0, archived: false, createdAt: FieldValue.serverTimestamp() });
     }
+    forgetContext();
     revalidatePath("/", "layout");
     return { ok: true, message: storeId ? "Loja alterada." : "Loja criada." };
   } catch (error) {
@@ -136,6 +140,7 @@ export async function setStoreArchived(_prev: ActionState, fd: FormData): Promis
       throw new UserError("O negócio precisa de pelo menos uma loja ativa.");
     }
     await col.stores(ctx.businessId).doc(storeId).update({ archived });
+    forgetContext();
     revalidatePath("/", "layout");
     return { ok: true, message: archived ? "Loja arquivada." : "Loja reativada." };
   } catch (error) {
@@ -211,6 +216,7 @@ export async function removeUser(_prev: ActionState, fd: FormData): Promise<Acti
         label: `${String(snap.get("name") || snap.get("email"))} foi removido do negócio`,
       });
     });
+    forgetContext();
     revalidatePath("/definicoes");
     return { ok: true, message: "Utilizador removido." };
   } catch (error) {
@@ -236,6 +242,7 @@ export async function transferOwnership(_prev: ActionState, fd: FormData): Promi
         label: `A propriedade passou para ${String(snap.get("name") || snap.get("email"))}`,
       });
     });
+    forgetContext();
     revalidatePath("/", "layout");
     return { ok: true, message: "Propriedade transferida." };
   } catch (error) {

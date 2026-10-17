@@ -49,36 +49,71 @@ export function storeFromDoc(id: string, data: DocumentData | undefined): Store 
   };
 }
 
-/** Utilizador, negócio e loja selecionada. Redireciona para o login ou para a configuração inicial. */
-export const getContext = cache(async (): Promise<Ctx> => {
-  const user = await requireSessionUser();
+interface BaseContext {
+  name: string;
+  businessId: string;
+  businessName: string;
+  ownerUid: string;
+  tz: string;
+  stores: Store[];
+  at: number;
+}
+
+// Negócio e lojas de cada utilizador, guardados por pouco tempo na memória do servidor. Evita duas idas ao
+// Firestore em cada página; as ações que mudam o negócio, as lojas ou os utilizadores limpam esta memória.
+const BASE_TTL_MS = 30_000;
+const baseCache = new Map<string, BaseContext>();
+
+export function forgetContext(): void {
+  baseCache.clear();
+}
+
+async function loadBase(user: SessionUser): Promise<BaseContext | null> {
+  const hit = baseCache.get(user.uid);
+  if (hit && Date.now() - hit.at < BASE_TTL_MS) return hit;
+
   const userSnap = await db().collection("users").doc(user.uid).get();
   const businessId = userSnap.exists ? String(userSnap.get("businessId") ?? "") : "";
-  if (!businessId) redirect("/onboarding");
+  if (!businessId) return null;
 
   const businessRef = db().collection("businesses").doc(businessId);
   const [businessSnap, storesSnap] = await Promise.all([businessRef.get(), businessRef.collection("stores").get()]);
-  if (!businessSnap.exists) redirect("/onboarding");
+  if (!businessSnap.exists) return null;
 
-  const stores = storesSnap.docs
-    .map((doc) => storeFromDoc(doc.id, doc.data()))
-    .sort((a, b) => a.name.localeCompare(b.name, "pt"));
-  const activeStores = stores.filter((store) => !store.archived);
-
-  const jar = await cookies();
-  const chosen = jar.get(STORE_COOKIE)?.value;
-  const store = activeStores.find((s) => s.id === chosen) ?? activeStores[0] ?? null;
-  const ownerUid = String(businessSnap.get("ownerUid") ?? "");
-
-  return {
-    ...user,
+  const base: BaseContext = {
     name: String(userSnap.get("name") || user.name),
     businessId,
     businessName: String(businessSnap.get("name") ?? "Negócio"),
-    ownerUid,
-    isOwner: ownerUid === user.uid,
+    ownerUid: String(businessSnap.get("ownerUid") ?? ""),
     tz: String(businessSnap.get("timezone") || DEFAULT_TZ),
-    stores,
+    stores: storesSnap.docs.map((doc) => storeFromDoc(doc.id, doc.data())).sort((a, b) => a.name.localeCompare(b.name, "pt")),
+    at: Date.now(),
+  };
+  if (baseCache.size > 200) baseCache.clear();
+  baseCache.set(user.uid, base);
+  return base;
+}
+
+/** Utilizador, negócio e loja selecionada. Redireciona para o login ou para a configuração inicial. */
+export const getContext = cache(async (): Promise<Ctx> => {
+  const user = await requireSessionUser();
+  const base = await loadBase(user);
+  if (!base) redirect("/onboarding");
+
+  const activeStores = base.stores.filter((store) => !store.archived);
+  const jar = await cookies();
+  const chosen = jar.get(STORE_COOKIE)?.value;
+  const store = activeStores.find((s) => s.id === chosen) ?? activeStores[0] ?? null;
+
+  return {
+    ...user,
+    name: base.name,
+    businessId: base.businessId,
+    businessName: base.businessName,
+    ownerUid: base.ownerUid,
+    isOwner: base.ownerUid === user.uid,
+    tz: base.tz,
+    stores: base.stores,
     activeStores,
     storeId: store?.id ?? "",
     store,

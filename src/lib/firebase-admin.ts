@@ -46,7 +46,8 @@ export function db(): Firestore {
   if (!firestore) {
     firestore = getFirestore(getAdminApp());
     try {
-      firestore.settings({ ignoreUndefinedProperties: true });
+      // REST em vez de gRPC: arranca muito mais depressa numa função serverless.
+      firestore.settings({ ignoreUndefinedProperties: true, preferRest: true });
     } catch {
       // Já configurado nesta instância.
     }
@@ -84,6 +85,13 @@ export async function serviceAccountToken(): Promise<number> {
   if (!credential) throw new Error("Credencial do Firebase Admin em falta.");
   const token = await credential.getAccessToken();
   return token.expires_in;
+}
+
+/** Token de acesso da conta de serviço, para chamar APIs REST da Google no diagnóstico. */
+export async function serviceAccessToken(): Promise<string> {
+  const credential = getAdminApp().options.credential;
+  if (!credential) throw new Error("Credencial do Firebase Admin em falta.");
+  return (await credential.getAccessToken()).access_token;
 }
 
 /** Rejeita se a promessa não terminar a tempo, para mostrar um erro em vez de ficar à espera. */

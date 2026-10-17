@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getContext } from "@/lib/session";
-import { listOrders } from "@/lib/server/data";
+import { listOpenOrders, listOrders } from "@/lib/server/data";
 import { shortDay } from "@/lib/dates";
 import { balanceOf, financialStatus, isOpen } from "@/lib/domain";
 import { formatShort } from "@/lib/money";
@@ -52,7 +52,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const filterId = typeof params.estado === "string" && FILTERS.some((f) => f.id === params.estado) ? params.estado : "abertas";
   const filter = FILTERS.find((f) => f.id === filterId)!;
 
-  const all = (await listOrders(ctx.businessId, 600)).filter((o) => o.storeId === ctx.storeId);
+  // Em aberto, prontas, por pagar e a aguardar só precisam das encomendas em aberto (consulta mais leve).
+  const needsAll = Boolean(q) || filterId === "levantadas" || filterId === "canceladas" || filterId === "todas";
+  const all = (needsAll ? await listOrders(ctx.businessId, 400) : await listOpenOrders(ctx.businessId))
+    .filter((o) => o.storeId === ctx.storeId)
+    .sort((a, b) => b.createdAtMs - a.createdAtMs);
   const needle = fold(q);
   const digits = normalizePhone(q);
   const searched = needle

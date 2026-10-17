@@ -2024,6 +2024,29 @@ body:has(.sheet-page) {
   }
 }
 
+
+/* ---------- A carregar ---------- */
+
+.skel {
+  background: linear-gradient(90deg, #efe5ea 0%, #f8f2f5 50%, #efe5ea 100%);
+  background-size: 200% 100%;
+  animation: skel 1.2s ease-in-out infinite;
+}
+
+.skel.dark {
+  background: linear-gradient(90deg, #3a2834 0%, #453240 50%, #3a2834 100%);
+  background-size: 200% 100%;
+}
+
+@keyframes skel {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

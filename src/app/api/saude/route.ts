@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cleanEnv, db, describeFirebaseError, firebaseProjectId, serviceAccountToken, withTimeout } from "@/lib/firebase-admin";
+import { cleanEnv, db, describeFirebaseError, firebaseProjectId, serviceAccessToken, serviceAccountToken, withTimeout } from "@/lib/firebase-admin";
 import { certificateCount } from "@/lib/server/id-token";
 
 export const runtime = "nodejs";
@@ -51,13 +51,31 @@ export async function GET() {
     chaveComAspas: /^\s*["']/.test(key),
     tamanhoDaChave: key.length,
   };
-  const [certificados, token, firestore] = await Promise.all([
+  const [certificados, token, firestore, localizacao] = await Promise.all([
     run("Certificados Google", async () => `${await certificateCount()} certificados de login obtidos`),
     run("Token Google", async () => `token da conta de serviço válido por ${await serviceAccountToken()} s`),
     run("Firestore", async () => {
-      const snap = await db().collection("_saude").doc("ping").get();
-      return snap.exists ? "documento de teste encontrado" : "base de dados acessível";
+      // Três leituras seguidas: a primeira inclui abrir a ligação; as outras mostram o tempo de cada ida à base de dados.
+      const times: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const start = Date.now();
+        await db().collection("_saude").doc("ping").get();
+        times.push(Date.now() - start);
+      }
+      return `leituras em ${times.join(" ms, ")} ms`;
+    }),
+    run("Localização do Firestore", async () => {
+      const response = await fetch(
+        `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)`,
+        { headers: { Authorization: `Bearer ${await serviceAccessToken()}` }, cache: "no-store" },
+      );
+      const body = (await response.json().catch(() => ({}))) as { locationId?: string; error?: { message?: string } };
+      if (!response.ok) throw new Error(body.error?.message ?? `HTTP ${response.status}`);
+      return body.locationId ?? "desconhecida";
     }),
   ]);
-  return NextResponse.json({ configuracao, certificados, token, firestore }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(
+    { regiaoDoServidor: process.env.VERCEL_REGION ?? "local", localizacaoFirestore: localizacao.detalhe ?? localizacao.erro, configuracao, certificados, token, firestore },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
