@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCents, parseMoney } from "./money";
+import { formatCents, formatShort, parseMoney } from "./money";
 import { addDays, daysBetween, isValidIsoDay, isoDay, longDay, startOfDayMs } from "./dates";
 import { formatPhone, whatsappNumber } from "./phone";
 
@@ -52,5 +52,12 @@ describe("telefones", () => {
     expect(whatsappNumber("84 123 4567")).toBe("258841234567");
     expect(whatsappNumber("+258 84 123 4567")).toBe("258841234567");
     expect(whatsappNumber("123")).toBeNull();
+  });
+});
+
+describe("valor curto", () => {
+  it("omite os decimais quando são zero", () => {
+    expect(formatShort(550000)).toBe("5\u00a0500");
+    expect(formatShort(550050)).toBe("5\u00a0500,50");
   });
 });

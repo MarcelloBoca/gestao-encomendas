@@ -79,9 +79,33 @@ const PATHS: Record<string, React.ReactNode> = {
   ),
   swap: <path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" />,
   edit: <path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4" />,
+  bag: (
+    <>
+      <path d="M6 8h12l-1 12H7z" />
+      <path d="M9 8V6a3 3 0 0 1 6 0v2" />
+    </>
+  ),
+  wallet: (
+    <>
+      <rect x="3" y="6" width="18" height="13" rx="2.5" />
+      <path d="M3 10h18M7 15h4" />
+    </>
+  ),
+  trend: <path d="M4 16l5-5 4 3 7-7" />,
+  bulb: <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" />,
 };
 
 export type IconName = keyof typeof PATHS;
+
+export function MoreIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+      <circle cx="5" cy="12" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="19" cy="12" r="1.8" />
+    </svg>
+  );
+}
 
 export default function Icon({ name, size = 20, stroke = 1.8 }: { name: IconName; size?: number; stroke?: number }) {
   return (

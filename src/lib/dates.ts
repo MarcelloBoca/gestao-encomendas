@@ -123,3 +123,9 @@ export function agoLabel(days: number): string {
   if (days <= 0) return "hoje";
   return days === 1 ? "há 1 dia" : `há ${days} dias`;
 }
+
+/** Hora atual (0–23) no fuso indicado. */
+export function hourNow(tz: string = DEFAULT_TZ): number {
+  const hour = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).format(new Date());
+  return Number(hour) % 24;
+}

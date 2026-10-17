@@ -32,7 +32,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
         <p className="p muted tnum">{customer.phone ? formatPhone(customer.phone) : "Sem telefone"}</p>
       </div>
       {customer.phone ? (
-        <a className="btn" href={whatsappLink(customer.phone, `Olá ${customer.name}, `)} target="_blank" rel="noopener noreferrer">
+        <a className="btn" style={{ border: "none" }} href={whatsappLink(customer.phone, `Olá ${customer.name}, `)} target="_blank" rel="noopener noreferrer">
           <Icon name="chat" size={18} stroke={2} />
           Abrir conversa no WhatsApp
         </a>

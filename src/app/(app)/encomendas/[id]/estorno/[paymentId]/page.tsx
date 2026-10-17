@@ -35,7 +35,7 @@ export default async function ReversePage({ params }: { params: Promise<{ id: st
           <input type="hidden" name="paymentId" value={payment.id} />
           <Notice tone="warn">
             Use o estorno para corrigir um pagamento registado por engano. O pagamento fica no histórico, marcado como estornado, e deixa de
-            contar. Se devolveu dinheiro ao cliente, registe antes um reembolso.
+            contar. Se devolveu dinheiro à cliente, registe antes um reembolso.
           </Notice>
           <div className="field">
             <label className="label" htmlFor="reason">

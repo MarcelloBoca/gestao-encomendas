@@ -9,7 +9,9 @@ import { balanceOf } from "@/lib/domain";
 import { formatMT } from "@/lib/money";
 import { reminderMessage, whatsappLink } from "@/lib/phone";
 import { collectOrder } from "@/app/actions/collection";
+import { markArrived } from "@/app/actions/orders";
 import Icon from "@/components/Icon";
+import InlineAction from "@/components/InlineAction";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { BackLink, Notice } from "@/components/ui";
 
@@ -23,7 +25,6 @@ export default async function CollectPage({ params }: { params: Promise<{ id: st
   const { order, payments } = bundle;
   const store = storeName(ctx, order.storeId);
   const balance = balanceOf(order.totalCents, order.paidCents);
-  const reservedLines = order.lines.filter((l) => l.reserved >= l.qty).length;
   const validPayments = payments.filter((p) => p.status === "valid").length;
   const blocked = balance > 0 || order.fulfillment !== "ready";
 
@@ -39,9 +40,9 @@ export default async function CollectPage({ params }: { params: Promise<{ id: st
   }
 
   const checks = (
-    <div className={blocked ? "sheet soft" : "sheet"}>
+    <div className="sheet">
       <div className="row">
-        <span className={`badge-icon round ${balance > 0 ? "tone-owed" : "tone-ok"}`} aria-hidden="true">
+        <span className={`badge-icon sm ${balance > 0 ? "tone-owed" : "tone-ok"}`} aria-hidden="true">
           <Icon name={balance > 0 ? "alert" : "check"} size={18} stroke={2.6} />
         </span>
         <span className="row-main">
@@ -63,13 +64,15 @@ export default async function CollectPage({ params }: { params: Promise<{ id: st
         </span>
       </div>
       <div className="row">
-        <span className={`badge-icon round ${order.fulfillment === "ready" ? "tone-ok" : "tone-wait"}`} aria-hidden="true">
-          <Icon name={order.fulfillment === "ready" ? "check" : "clock"} size={18} stroke={2.4} />
+        <span className={`badge-icon sm ${order.fulfillment === "ready" ? "tone-ok" : "tone-wait"}`} aria-hidden="true">
+          <Icon name={order.fulfillment === "ready" ? "check" : "box"} size={18} stroke={2.4} />
         </span>
         <span className="row-main">
-          <span className="row-title">{order.fulfillment === "ready" ? "Mercadoria reservada" : "A aguardar mercadoria"}</span>
+          <span className="row-title">{order.fulfillment === "ready" ? "A mercadoria chegou" : "A aguardar mercadoria"}</span>
           <span className="row-sub">
-            {reservedLines} de {order.lines.length} {order.lines.length === 1 ? "artigo" : "artigos"} na {store}
+            {order.fulfillment === "ready"
+              ? `${order.lines.length} ${order.lines.length === 1 ? "artigo" : "artigos"} na ${store}`
+              : "Marque a chegada no detalhe da encomenda"}
           </span>
         </span>
       </div>
@@ -81,7 +84,7 @@ export default async function CollectPage({ params }: { params: Promise<{ id: st
       <main className="screen narrow">
         <BackLink href={`/encomendas/${order.id}`} label={order.number} />
         <div className="stack" style={{ alignItems: "center", textAlign: "center", gap: 6 }}>
-          <span className="badge-icon big tone-owed" aria-hidden="true">
+          <span className="badge-icon big tone-blocked" aria-hidden="true">
             <Icon name="lock" size={26} stroke={2} />
           </span>
           <h1 className="h1 xs" style={{ marginTop: 6 }}>
@@ -97,7 +100,9 @@ export default async function CollectPage({ params }: { params: Promise<{ id: st
             <Link href={`/encomendas/${order.id}/pagamento`} className="btn btn-primary">
               Registar pagamento
             </Link>
-          ) : null}
+          ) : (
+            <InlineAction action={markArrived} fields={{ orderId: order.id, key: randomUUID() }} pendingText="A marcar…" label="Mercadoria chegou" />
+          )}
           {balance > 0 ? (
             <a className="btn" href={whatsappLink(order.customerPhone, reminderMessage(order, store))} target="_blank" rel="noopener noreferrer">
               <Icon name="chat" size={18} stroke={2} />
@@ -131,7 +136,7 @@ export default async function CollectPage({ params }: { params: Promise<{ id: st
 
       <section className="section" aria-labelledby="saida">
         <h2 id="saida" className="h2">
-          Sai do stock
+          A entregar
         </h2>
         <div className="sheet tnum">
           {order.lines.map((line) => (
@@ -139,7 +144,7 @@ export default async function CollectPage({ params }: { params: Promise<{ id: st
               <span className="row-main" style={{ fontSize: 16 }}>
                 {line.name}
               </span>
-              <span className="strong">−{line.qty}</span>
+              <span className="strong">{line.qty}×</span>
             </div>
           ))}
         </div>
@@ -155,7 +160,7 @@ export default async function CollectPage({ params }: { params: Promise<{ id: st
           </label>
           <label className="group-row">
             <span className="muted">Nota</span>
-            <input type="text" name="note" placeholder="Ex.: levantado pelo irmão" maxLength={300} />
+            <input type="text" name="note" placeholder="Ex.: levantado pela irmã" maxLength={300} />
           </label>
         </div>
         <p className="p small muted">

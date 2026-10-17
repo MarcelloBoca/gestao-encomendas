@@ -1,37 +1,11 @@
 import { describe, expect, it } from "vitest";
-import {
-  UserError,
-  allocateFifo,
-  balanceOf,
-  computeTotals,
-  editLines,
-  financialStatus,
-  fulfillmentFromLines,
-  missingByItem,
-  reserveFromPool,
-  type WaitingOrder,
-} from "./domain";
-import type { OrderLine } from "./types";
-
-const line = (id: string, itemId: string, qty: number, reserved = 0, priceCents = 1000): OrderLine => ({
-  id,
-  itemId,
-  name: itemId,
-  priceCents,
-  qty,
-  reserved,
-});
+import { UserError, balanceOf, cleanLines, collectBlockers, financialStatus, greeting, paidPercent, totalOf } from "./domain";
+import { axisLabel, niceMax, percentages, periodRange, receivedBuckets } from "./report-series";
 
 describe("totais e estado financeiro", () => {
-  it("calcula subtotal, desconto e total", () => {
-    const totals = computeTotals([line("a", "x", 1, 0, 980000), line("b", "y", 2, 0, 135000)], 0);
-    expect(totals).toEqual({ subtotalCents: 1250000, totalCents: 1250000 });
-    expect(computeTotals([line("a", "x", 2, 0, 5000)], 1000).totalCents).toBe(9000);
-  });
-
-  it("recusa desconto maior que o subtotal ou negativo", () => {
-    expect(() => computeTotals([line("a", "x", 1, 0, 5000)], 6000)).toThrow(UserError);
-    expect(() => computeTotals([line("a", "x", 1, 0, 5000)], -1)).toThrow(UserError);
+  it("soma preço × quantidade das linhas", () => {
+    expect(totalOf([{ priceCents: 380000, qty: 1 }, { priceCents: 135000, qty: 2 }])).toBe(650000);
+    expect(totalOf([])).toBe(0);
   });
 
   it("parcela de 40 em 100 deixa saldo 60 e parcialmente paga", () => {
@@ -44,96 +18,84 @@ describe("totais e estado financeiro", () => {
     expect(financialStatus(10000, 10000)).toBe("paid");
     expect(balanceOf(10000, 12000)).toBe(0);
   });
-});
 
-describe("estado de cumprimento", () => {
-  it("só fica pronta quando todas as linhas estão reservadas", () => {
-    expect(fulfillmentFromLines([line("a", "x", 2, 2), line("b", "y", 1, 0)])).toBe("awaiting");
-    expect(fulfillmentFromLines([line("a", "x", 2, 2), line("b", "y", 1, 1)])).toBe("ready");
-    expect(fulfillmentFromLines([])).toBe("awaiting");
+  it("percentagem paga nunca mostra 100% com saldo em falta", () => {
+    expect(paidPercent(900000, 550000)).toBe(61);
+    expect(paidPercent(10000, 9999)).toBe(99);
+    expect(paidPercent(10000, 10000)).toBe(100);
+    expect(paidPercent(0, 0)).toBe(100);
   });
 });
 
-describe("reserva pela ordem das encomendas", () => {
-  const orders = (): WaitingOrder[] => [
-    { id: "B", createdAtMs: 2000, lines: [line("b1", "almofada", 2)] },
-    { id: "A", createdAtMs: 1000, lines: [line("a1", "almofada", 2)] },
-  ];
-
-  it("a encomenda mais antiga recebe primeiro", () => {
-    const list = orders();
-    const result = allocateFifo("almofada", 2, list);
-    expect(result.allocated).toBe(2);
-    expect(list.find((o) => o.id === "A")!.lines[0].reserved).toBe(2);
-    expect(list.find((o) => o.id === "B")!.lines[0].reserved).toBe(0);
-  });
-
-  it("reserva parcial na encomenda seguinte quando sobra", () => {
-    const list = orders();
-    const result = allocateFifo("almofada", 3, list);
-    expect(result.allocated).toBe(3);
-    expect(list.find((o) => o.id === "B")!.lines[0].reserved).toBe(1);
-  });
-
-  it("não reserva mais do que o necessário", () => {
-    const list = orders();
-    const result = allocateFifo("almofada", 10, list);
-    expect(result.allocated).toBe(4);
-  });
-
-  it("ignora outros artigos", () => {
-    const list = orders();
-    expect(allocateFifo("fogao", 5, list).allocated).toBe(0);
-  });
-
-  it("nova encomenda reserva do disponível", () => {
-    const lines = [line("n1", "colchao", 1), line("n2", "almofada", 2)];
-    const pool = new Map([["colchao", 2]]);
-    reserveFromPool(lines, pool);
-    expect(lines[0].reserved).toBe(1);
-    expect(lines[1].reserved).toBe(0);
-    expect(pool.get("colchao")).toBe(1);
+describe("levantamento", () => {
+  it("bloqueia com saldo em falta e/ou mercadoria por chegar", () => {
+    expect(collectBlockers({ totalCents: 1000, paidCents: 500, fulfillment: "awaiting" })).toEqual(["balance", "arrival"]);
+    expect(collectBlockers({ totalCents: 1000, paidCents: 1000, fulfillment: "awaiting" })).toEqual(["arrival"]);
+    expect(collectBlockers({ totalCents: 1000, paidCents: 500, fulfillment: "ready" })).toEqual(["balance"]);
+    expect(collectBlockers({ totalCents: 1000, paidCents: 1000, fulfillment: "ready" })).toEqual([]);
   });
 });
 
-describe("edição de linhas", () => {
-  let counter = 0;
-  const newId = () => `novo${++counter}`;
-
-  it("reduzir a quantidade liberta a reserva", () => {
-    const pool = new Map<string, number>();
-    const { lines, reservedDelta } = editLines([line("a", "x", 3, 3)], [{ lineId: "a", itemId: "x", name: "x", priceCents: 1000, qty: 1 }], pool, newId);
-    expect(lines[0].reserved).toBe(1);
-    expect(pool.get("x")).toBe(2);
-    expect(reservedDelta.get("x")).toBe(-2);
+describe("artigos escritos à mão", () => {
+  it("limpa espaços e mantém o resto", () => {
+    expect(cleanLines([{ name: "  Sandália  preta,  nº 38 ", priceCents: 380000, qty: 1 }])).toEqual([
+      { name: "Sandália preta, nº 38", priceCents: 380000, qty: 1 },
+    ]);
   });
 
-  it("aumentar a quantidade reserva do disponível", () => {
-    const pool = new Map([["x", 1]]);
-    const { lines, reservedDelta } = editLines([line("a", "x", 1, 1)], [{ lineId: "a", itemId: "x", name: "x", priceCents: 1000, qty: 3 }], pool, newId);
-    expect(lines[0].reserved).toBe(2);
-    expect(pool.get("x")).toBe(0);
-    expect(reservedDelta.get("x")).toBe(1);
+  it("recusa descrição vazia, quantidade inválida ou nenhuma linha", () => {
+    expect(() => cleanLines([])).toThrow(UserError);
+    expect(() => cleanLines([{ name: "   ", priceCents: 100, qty: 1 }])).toThrow(UserError);
+    expect(() => cleanLines([{ name: "Botas", priceCents: 100, qty: 0 }])).toThrow(UserError);
+    expect(() => cleanLines([{ name: "Botas", priceCents: -1, qty: 1 }])).toThrow(UserError);
+  });
+});
+
+describe("saudação", () => {
+  it("muda com a hora do dia", () => {
+    expect(greeting(8)).toBe("Bom dia");
+    expect(greeting(14)).toBe("Boa tarde");
+    expect(greeting(21)).toBe("Boa noite");
+    expect(greeting(2)).toBe("Boa noite");
+  });
+});
+
+describe("séries dos relatórios", () => {
+  it("semana: 7 dias a terminar hoje, com reembolsos a descontar", () => {
+    const today = "2026-10-17"; // sábado
+    expect(periodRange("semana", today)).toEqual({ from: "2026-10-11", to: today });
+    const buckets = receivedBuckets("semana", today, [
+      { date: "2026-10-17", cents: 2130000 },
+      { date: "2026-10-12", cents: 980000 },
+      { date: "2026-10-12", cents: -50000 },
+      { date: "2026-10-01", cents: 999 },
+    ]);
+    expect(buckets).toHaveLength(7);
+    expect(buckets[0].label).toBe("Dom");
+    expect(buckets[6].label).toBe("Sáb");
+    expect(buckets[6].cents).toBe(2130000);
+    expect(buckets[1].cents).toBe(930000);
+    expect(buckets.reduce((s, b) => s + b.cents, 0)).toBe(3060000);
   });
 
-  it("remover uma linha liberta tudo e uma linha nova reserva", () => {
-    const pool = new Map([["y", 5]]);
-    const { lines, reservedDelta } = editLines(
-      [line("a", "x", 2, 2)],
-      [{ itemId: "y", name: "y", priceCents: 500, qty: 2 }],
-      pool,
-      newId,
-    );
-    expect(lines).toHaveLength(1);
-    expect(lines[0].reserved).toBe(2);
-    expect(pool.get("x")).toBe(2);
-    expect(reservedDelta.get("x")).toBe(-2);
-    expect(reservedDelta.get("y")).toBe(2);
+  it("3 meses: semanas de 7 dias, a última a terminar hoje", () => {
+    const buckets = receivedBuckets("trimestre", "2026-10-17", [{ date: "2026-10-17", cents: 100 }, { date: "2026-07-19", cents: 50 }]);
+    expect(buckets).toHaveLength(13);
+    expect(buckets[0].from).toBe("2026-07-19");
+    expect(buckets[0].cents).toBe(50);
+    expect(buckets[12].to).toBe("2026-10-17");
+    expect(buckets[12].cents).toBe(100);
   });
 
-  it("conta as quantidades em falta por artigo", () => {
-    const missing = missingByItem([{ lines: [line("a", "x", 3, 1), line("b", "y", 2, 2)] }, { lines: [line("c", "x", 1, 0)] }]);
-    expect(missing.get("x")).toBe(3);
-    expect(missing.has("y")).toBe(false);
+  it("topo do eixo redondo e percentagens que somam 100", () => {
+    expect(niceMax(2130000)).toBe(3000000);
+    expect(axisLabel(3000000)).toBe("30 mil");
+    expect(axisLabel(150000)).toBe("1,5 mil");
+    expect(axisLabel(80000)).toBe("800");
+    expect(niceMax(1000000)).toBe(1000000);
+    expect(niceMax(0)).toBe(100000);
+    expect(percentages([46, 32, 14, 5, 3])).toEqual([46, 32, 14, 5, 3]);
+    expect(percentages([1, 1, 1]).reduce((s, v) => s + v, 0)).toBe(100);
+    expect(percentages([0, 0])).toEqual([0, 0]);
   });
 });

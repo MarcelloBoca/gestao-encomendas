@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { getContext } from "@/lib/session";
 import { listOpenOrders, paymentsBetween, refundsBetween } from "@/lib/server/data";
-import { agoLabel, daysBetween, isoDay, longDay, todayIso } from "@/lib/dates";
-import { balanceOf } from "@/lib/domain";
-import { formatMT } from "@/lib/money";
+import { agoLabel, daysBetween, hourNow, isoDay, longDay, todayIso } from "@/lib/dates";
+import { balanceOf, greeting } from "@/lib/domain";
+import { formatCents, formatMT, formatShort } from "@/lib/money";
 import { readyMessage, whatsappLink } from "@/lib/phone";
+import { plural } from "@/lib/text";
 import Icon from "@/components/Icon";
 import StorePicker from "@/components/StorePicker";
-import { BigMoney, Empty, FinPill } from "@/components/ui";
+import { Avatar, Empty, FinPill } from "@/components/ui";
 
 export default async function HomePage() {
   const ctx = await getContext();
@@ -23,69 +24,117 @@ export default async function HomePage() {
   const storeRefunds = refunds.filter((r) => r.storeId === ctx.storeId);
   const received = validPayments.reduce((s, p) => s + p.amountCents, 0) - storeRefunds.reduce((s, r) => s + r.amountCents, 0);
 
-  const owed = storeOrders.reduce((s, o) => s + balanceOf(o.totalCents, o.paidCents), 0);
-  const ready = storeOrders
-    .filter((o) => o.fulfillment === "ready")
-    .sort((a, b) => (a.readyAtMs ?? 0) - (b.readyAtMs ?? 0));
-  const oldDebts = storeOrders.filter((o) => balanceOf(o.totalCents, o.paidCents) > 0 && daysBetween(o.createdDate || today, today) > 60);
-  const oldDebtTotal = oldDebts.reduce((s, o) => s + balanceOf(o.totalCents, o.paidCents), 0);
-  const late = storeOrders.filter((o) => o.fulfillment === "awaiting" && o.expectedDate && o.expectedDate < today);
-  const staleReady = ready.filter((o) => o.readyAtMs && daysBetween(isoDay(new Date(o.readyAtMs), ctx.tz), today) > 7);
-  const storeName = ctx.store?.name ?? "";
+  const withBalance = storeOrders.filter((o) => balanceOf(o.totalCents, o.paidCents) > 0);
+  const owed = withBalance.reduce((s, o) => s + balanceOf(o.totalCents, o.paidCents), 0);
+  const ready = storeOrders.filter((o) => o.fulfillment === "ready").sort((a, b) => (a.readyAtMs ?? 0) - (b.readyAtMs ?? 0));
+  const readyDays = (ms: number | null) => (ms ? daysBetween(isoDay(new Date(ms), ctx.tz), today) : 0);
 
-  const paymentsLabel = `${validPayments.length} ${validPayments.length === 1 ? "pagamento" : "pagamentos"}`;
-  const refundsLabel = storeRefunds.length ? ` e ${storeRefunds.length} ${storeRefunds.length === 1 ? "reembolso" : "reembolsos"}` : "";
+  const oldDebts = withBalance.filter((o) => daysBetween(o.createdDate || today, today) > 60);
+  const oldDebtTotal = oldDebts.reduce((s, o) => s + balanceOf(o.totalCents, o.paidCents), 0);
+  const longWait = storeOrders.filter((o) => o.fulfillment === "awaiting" && daysBetween(o.createdDate || today, today) > 15);
+  const staleReady = ready.filter((o) => readyDays(o.readyAtMs) > 7);
+  const storeName = ctx.store?.name ?? "";
+  const firstName = ctx.name.trim().split(/\s+/)[0] ?? "";
+
+  const receivedNote = `${plural(validPayments.length, "pagamento", "pagamentos")}${
+    storeRefunds.length ? ` e ${plural(storeRefunds.length, "reembolso", "reembolsos")}` : ""
+  }`;
 
   return (
     <main className="screen">
-      <div className="stack-md" style={{ gap: 8 }}>
-        <div className="top">
+      <header className="hero">
+        <svg className="hero-deco" width="240" height="280" viewBox="150 0 240 280" aria-hidden="true">
+          <path d="M180 300 C 230 230, 250 170, 300 130 S 380 70, 420 60" fill="none" stroke="#ECB0DC" strokeOpacity="0.22" strokeWidth="1.5" />
+          <path d="M210 300 C 260 240, 290 190, 330 160 S 400 110, 430 104" fill="none" stroke="#ECB0DC" strokeOpacity="0.12" strokeWidth="1.5" />
+          <path d="M332 92 l4 10 l10 4 l-10 4 l-4 10 l-4 -10 l-10 -4 l10 -4 z" fill="#ECB0DC" fillOpacity="0.5" />
+        </svg>
+        <div className="hero-bar on-dark">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="hero-logo" src="/icon-192.png" alt="Sola.chic" width={44} height={44} />
           <StorePicker stores={ctx.activeStores} storeId={ctx.storeId} back="/" />
-          <div className="top-actions">
-            <Link href="/definicoes" className="icon-btn" aria-label="Definições">
-              <Icon name="settings" size={20} />
-            </Link>
-            <Link href="/encomendas/nova" className="icon-btn solid" aria-label="Nova encomenda">
-              <Icon name="plus" size={22} stroke={2.2} />
-            </Link>
-          </div>
+          <span style={{ flex: 1 }} />
+          <Link href="/definicoes" className="icon-btn glass" aria-label="Definições">
+            <Icon name="settings" size={20} />
+          </Link>
         </div>
-        <div>
-          <h1 className="h1">Hoje</h1>
-          <p className="p muted">{longDay(today)}</p>
-        </div>
+        <h1>
+          {greeting(hourNow(ctx.tz))}
+          {firstName ? `, ${firstName}` : ""}
+        </h1>
+        <p className="hero-sub">{longDay(today)}</p>
+      </header>
+
+      <Link href="/relatorios/fecho" className="card today-card lift" aria-label={`Recebido hoje: ${formatMT(received)}. Ver fecho de caixa`}>
+        <span className="row-main" style={{ gap: 4 }}>
+          <span className="label" style={{ fontWeight: 600 }}>
+            Recebido hoje
+          </span>
+          <span className="money-big">
+            {formatCents(received)} <span className="unit">MT</span>
+          </span>
+          <span className="small muted">{receivedNote}</span>
+        </span>
+        <span className="go" aria-hidden="true">
+          <Icon name="chevron" size={18} stroke={2.2} />
+        </span>
+      </Link>
+
+      <div className="tiles">
+        <Link href="/relatorios/dividas" className="tile">
+          <span className="tile-head">
+            <span className="badge-icon sm tone-owed" aria-hidden="true">
+              <Icon name="clock" size={17} stroke={2} />
+            </span>
+            Em dívida
+          </span>
+          <span className="tile-value">{formatShort(owed)} MT</span>
+          <span className="tiny muted">em {plural(withBalance.length, "encomenda", "encomendas")}</span>
+        </Link>
+        <Link href="/encomendas?estado=prontas" className="tile">
+          <span className="tile-head">
+            <span className="badge-icon sm tone-ready" aria-hidden="true">
+              <Icon name="bag" size={17} stroke={2} />
+            </span>
+            Prontas
+          </span>
+          <span className="tile-value">{plural(ready.length, "encomenda", "encomendas")}</span>
+          <span className="tiny muted">à espera da cliente</span>
+        </Link>
       </div>
 
-      <section className="sheet pad" aria-label="Resumo do dia">
-        <div>
-          <p className="label">Recebido hoje</p>
-          <BigMoney cents={received} />
-          <p className="p small muted">
-            {paymentsLabel}
-            {refundsLabel}
-          </p>
-        </div>
-        <div className="split">
-          <Link href="/relatorios/dividas" className="stat">
-            <span className="stat-label">
-              <span className="dot owed" aria-hidden="true" />
-              Em dívida
+      <section className="section" aria-labelledby="acoes">
+        <h2 id="acoes" className="h2">
+          Ações rápidas
+        </h2>
+        <div className="quick">
+          <Link href="/encomendas/nova">
+            <span className="quick-icon solid" aria-hidden="true">
+              <Icon name="plus" size={24} stroke={2.2} />
             </span>
-            <span className="stat-value">{formatMT(owed)}</span>
+            Nova encomenda
           </Link>
-          <Link href="/encomendas?estado=prontas" className="stat">
-            <span className="stat-label">
-              <span className="dot ready" aria-hidden="true" />
-              Prontas a levantar
+          <Link href="/encomendas?estado=porpagar">
+            <span className="quick-icon" aria-hidden="true">
+              <Icon name="wallet" size={24} />
             </span>
-            <span className="stat-value">
-              {ready.length} {ready.length === 1 ? "encomenda" : "encomendas"}
+            Registar pagamento
+          </Link>
+          <Link href="/encomendas/chegada">
+            <span className="quick-icon" aria-hidden="true">
+              <Icon name="box" size={24} />
             </span>
+            Mercadoria chegou
+          </Link>
+          <Link href="/clientes">
+            <span className="quick-icon" aria-hidden="true">
+              <Icon name="users" size={24} />
+            </span>
+            Clientes
           </Link>
         </div>
       </section>
 
-      {oldDebts.length || late.length || staleReady.length ? (
+      {oldDebts.length || longWait.length || staleReady.length ? (
         <section className="section" aria-labelledby="atencao">
           <h2 id="atencao" className="h2">
             Precisa de atenção
@@ -97,40 +146,42 @@ export default async function HomePage() {
                   <Icon name="clock" />
                 </span>
                 <span className="row-main">
-                  <span className="row-title">
-                    {oldDebts.length} {oldDebts.length === 1 ? "dívida" : "dívidas"} com mais de 60 dias
-                  </span>
+                  <span className="row-title">{plural(oldDebts.length, "dívida", "dívidas")} com mais de 60 dias</span>
                   <span className="row-sub">Faltam {formatMT(oldDebtTotal)} no total</span>
                 </span>
-                <Icon name="chevron" size={18} />
+                <span className="chev">
+                  <Icon name="chevron" size={18} stroke={2} />
+                </span>
               </Link>
             ) : null}
-            {late.length ? (
-              <Link href="/encomendas?estado=atrasadas" className="row">
+            {longWait.length ? (
+              <Link href="/encomendas/chegada" className="row">
                 <span className="badge-icon tone-wait" aria-hidden="true">
                   <Icon name="box" />
                 </span>
                 <span className="row-main">
-                  <span className="row-title">
-                    {late.length} {late.length === 1 ? "encomenda atrasada" : "encomendas atrasadas"}
-                  </span>
-                  <span className="row-sub">A data prevista de chegada já passou</span>
+                  <span className="row-title">{longWait.length} à espera de mercadoria há +15 dias</span>
+                  <span className="row-sub">Marque a chegada quando o fornecedor entregar</span>
                 </span>
-                <Icon name="chevron" size={18} />
+                <span className="chev">
+                  <Icon name="chevron" size={18} stroke={2} />
+                </span>
               </Link>
             ) : null}
             {staleReady.length ? (
               <Link href="/relatorios/prontas" className="row">
                 <span className="badge-icon tone-ready" aria-hidden="true">
-                  <Icon name="clock" />
+                  <Icon name="bag" />
                 </span>
                 <span className="row-main">
                   <span className="row-title">
                     {staleReady.length} {staleReady.length === 1 ? "pronta" : "prontas"} há mais de 7 dias
                   </span>
-                  <span className="row-sub">Mercadoria parada na loja</span>
+                  <span className="row-sub">Lembre a cliente de vir levantar</span>
                 </span>
-                <Icon name="chevron" size={18} />
+                <span className="chev">
+                  <Icon name="chevron" size={18} stroke={2} />
+                </span>
               </Link>
             ) : null}
           </div>
@@ -142,24 +193,24 @@ export default async function HomePage() {
           <h2 id="prontas" className="h2">
             Prontas a levantar
           </h2>
-          {ready.length > 3 ? (
-            <Link href="/encomendas?estado=prontas" className="small strong">
-              Ver as {ready.length}
-            </Link>
-          ) : null}
+          {ready.length > 3 ? <Link href="/encomendas?estado=prontas">Ver as {ready.length}</Link> : null}
         </div>
         <div className="sheet">
           {ready.length === 0 ? (
-            <Empty>Nenhuma encomenda pronta. Quando registar a receção de mercadoria, as encomendas reservadas aparecem aqui.</Empty>
+            <Empty>Nenhuma encomenda pronta. Quando a mercadoria chegar, marque a chegada e a encomenda aparece aqui.</Empty>
           ) : (
             ready.slice(0, 3).map((order) => (
               <div key={order.id} className="row tight">
-                <Link href={`/encomendas/${order.id}`} className="row-main" style={{ textDecoration: "none", color: "inherit", minHeight: 44, justifyContent: "center" }}>
-                  <span className="kicker tnum">
-                    {order.number}
-                    {order.readyAtMs ? `, pronta ${agoLabel(daysBetween(isoDay(new Date(order.readyAtMs), ctx.tz), today))}` : ""}
-                  </span>
+                <Avatar name={order.customerName} />
+                <Link
+                  href={`/encomendas/${order.id}`}
+                  className="row-main"
+                  style={{ textDecoration: "none", color: "inherit", minHeight: 44, justifyContent: "center" }}
+                >
                   <span className="row-title">{order.customerName}</span>
+                  <span className="tiny muted tnum">
+                    {order.number}, pronta {agoLabel(readyDays(order.readyAtMs))}
+                  </span>
                 </Link>
                 <FinPill order={order} />
                 <a

@@ -52,7 +52,7 @@ export default async function CancelPage({ params }: { params: Promise<{ id: str
                   <input type="checkbox" name="retain" value="1" required />
                   <span className="row-main">
                     <span className="row-title">Reter os {formatMT(order.paidCents)}</span>
-                    <span className="row-sub">O valor fica como recebido e não é devolvido ao cliente.</span>
+                    <span className="row-sub">O valor fica como recebido e não é devolvido à cliente.</span>
                   </span>
                 </label>
               </div>
@@ -62,9 +62,8 @@ export default async function CancelPage({ params }: { params: Promise<{ id: str
             <label className="label" htmlFor="reason">
               Motivo
             </label>
-            <textarea id="reason" name="reason" className="textarea" required maxLength={500} placeholder="Ex.: o cliente desistiu" />
+            <textarea id="reason" name="reason" className="textarea" required maxLength={500} placeholder="Ex.: a cliente desistiu" />
           </div>
-          <p className="p small muted">As unidades reservadas voltam ao stock e passam para a encomenda seguinte em espera.</p>
           <SubmitButton className="btn btn-danger" pendingText="A cancelar…">
             Cancelar encomenda
           </SubmitButton>

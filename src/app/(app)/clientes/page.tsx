@@ -7,7 +7,7 @@ import { formatMT } from "@/lib/money";
 import { formatPhone, normalizePhone } from "@/lib/phone";
 import { fold } from "@/lib/text";
 import Icon from "@/components/Icon";
-import { BackLink, Empty } from "@/components/ui";
+import { Avatar, Empty } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Clientes" };
 
@@ -31,10 +31,12 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
 
   return (
     <main className="screen">
-      <BackLink href="/encomendas" label="Encomendas" />
-      <h1 className="h1" style={{ marginTop: -8 }}>
-        Clientes
-      </h1>
+      <div className="top">
+        <h1 className="h1">Clientes</h1>
+        <Link href="/encomendas/nova" className="icon-btn solid" aria-label="Nova encomenda">
+          <Icon name="plus" size={22} stroke={2.2} />
+        </Link>
+      </div>
       <form action="/clientes" method="get" role="search">
         <label className="search">
           <Icon name="search" size={18} stroke={2} />
@@ -44,18 +46,21 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       </form>
       <div className="sheet">
         {visible.length === 0 ? (
-          <Empty>{q ? "Nenhum cliente corresponde à pesquisa." : "Os clientes aparecem aqui quando criar encomendas."}</Empty>
+          <Empty>{q ? "Nenhuma cliente corresponde à pesquisa." : "As clientes aparecem aqui quando criar encomendas."}</Empty>
         ) : (
           visible.map((c) => {
             const owed = debt.get(c.id) ?? 0;
             return (
               <Link key={c.id} href={`/clientes/${c.id}`} className="row">
+                <Avatar name={c.name} />
                 <span className="row-main">
                   <span className="row-title">{c.name}</span>
                   <span className="row-sub tnum">{c.phone ? formatPhone(c.phone) : "Sem telefone"}</span>
                 </span>
                 {owed > 0 ? <span className="small strong owed-text tnum nowrap">Deve {formatMT(owed)}</span> : null}
-                <Icon name="chevron" size={18} />
+                <span className="chev">
+                  <Icon name="chevron" size={18} stroke={2} />
+                </span>
               </Link>
             );
           })

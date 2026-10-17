@@ -45,3 +45,9 @@ export function parseMoney(input: string | null | undefined): number | null {
 export function centsToInput(cents: number): string {
   return formatCents(cents).replace(/ /g, " ");
 }
+
+/** Valor curto para cartões: "5 500" ou "5 500,50" (sem decimais quando são zero). */
+export function formatShort(cents: number): string {
+  const full = formatCents(cents);
+  return full.endsWith(",00") ? full.slice(0, -3) : full;
+}

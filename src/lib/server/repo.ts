@@ -2,21 +2,7 @@
 
 import { Timestamp, type DocumentData, type DocumentSnapshot } from "firebase-admin/firestore";
 import { db } from "../firebase-admin";
-import type {
-  AuditEntry,
-  Category,
-  Customer,
-  Fulfillment,
-  Item,
-  Movement,
-  MovementType,
-  Order,
-  OrderLine,
-  Payment,
-  PaymentMethod,
-  Refund,
-  StockLevel,
-} from "../types";
+import type { AuditEntry, Customer, Fulfillment, Order, OrderLine, Payment, PaymentMethod, Refund } from "../types";
 
 export function businessRef(businessId: string) {
   return db().collection("businesses").doc(businessId);
@@ -24,13 +10,10 @@ export function businessRef(businessId: string) {
 
 export const col = {
   stores: (b: string) => businessRef(b).collection("stores"),
-  categories: (b: string) => businessRef(b).collection("categories"),
-  items: (b: string) => businessRef(b).collection("items"),
   customers: (b: string) => businessRef(b).collection("customers"),
   orders: (b: string) => businessRef(b).collection("orders"),
   payments: (b: string) => businessRef(b).collection("payments"),
   refunds: (b: string) => businessRef(b).collection("refunds"),
-  movements: (b: string) => businessRef(b).collection("movements"),
   audit: (b: string) => businessRef(b).collection("audit"),
   idempotency: (b: string) => businessRef(b).collection("idempotency"),
   users: () => db().collection("users"),
@@ -50,11 +33,9 @@ const strOrNull = (value: unknown): string | null => (typeof value === "string" 
 export function toLine(raw: DocumentData): OrderLine {
   return {
     id: str(raw.id),
-    itemId: str(raw.itemId),
     name: str(raw.name),
     priceCents: num(raw.priceCents),
     qty: num(raw.qty),
-    reserved: num(raw.reserved),
   };
 }
 
@@ -71,9 +52,6 @@ export function toOrder(id: string, d: DocumentData): Order {
     customerPhone: str(d.customerPhone),
     createdAtMs: toMs(d.createdAt) ?? 0,
     createdDate: str(d.createdDate),
-    expectedDate: strOrNull(d.expectedDate),
-    discountCents: num(d.discountCents),
-    subtotalCents: num(d.subtotalCents),
     totalCents: num(d.totalCents),
     paymentsCents: num(d.paymentsCents),
     refundsCents: num(d.refundsCents),
@@ -82,6 +60,7 @@ export function toOrder(id: string, d: DocumentData): Order {
     fulfillment,
     lines: Array.isArray(d.lines) ? d.lines.map((l: DocumentData) => toLine(l)) : [],
     readyAtMs: toMs(d.readyAt),
+    readyByName: strOrNull(d.readyByName),
     collectedAtMs: toMs(d.collectedAt),
     collectedDate: strOrNull(d.collectedDate),
     collectedByName: strOrNull(d.collectedByName),
@@ -96,9 +75,9 @@ export function orderFromSnap(snap: DocumentSnapshot): Order {
   return toOrder(snap.id, snap.data() ?? {});
 }
 
-/** Linhas e campos de uma encomenda como são gravados. */
+/** Linhas de uma encomenda como são gravadas. */
 export function linesForWrite(lines: OrderLine[]): DocumentData[] {
-  return lines.map((l) => ({ id: l.id, itemId: l.itemId, name: l.name, priceCents: l.priceCents, qty: l.qty, reserved: l.reserved }));
+  return lines.map((l) => ({ id: l.id, name: l.name, priceCents: l.priceCents, qty: l.qty }));
 }
 
 export function toPayment(id: string, d: DocumentData): Payment {
@@ -136,52 +115,8 @@ export function toRefund(id: string, d: DocumentData): Refund {
   };
 }
 
-export function toItem(id: string, d: DocumentData): Item {
-  const stock: Record<string, StockLevel> = {};
-  const raw = d.stock && typeof d.stock === "object" ? (d.stock as Record<string, DocumentData>) : {};
-  for (const [storeId, level] of Object.entries(raw)) {
-    stock[storeId] = { physical: num(level?.physical), reserved: num(level?.reserved) };
-  }
-  return {
-    id,
-    name: str(d.name),
-    categoryId: strOrNull(d.categoryId),
-    priceCents: num(d.priceCents),
-    archived: Boolean(d.archived),
-    stock,
-  };
-}
-
-export function stockAt(item: Item, storeId: string): StockLevel & { available: number } {
-  const level = item.stock[storeId] ?? { physical: 0, reserved: 0 };
-  return { ...level, available: Math.max(0, level.physical - level.reserved) };
-}
-
-export function toCategory(id: string, d: DocumentData): Category {
-  return { id, name: str(d.name), archived: Boolean(d.archived) };
-}
-
 export function toCustomer(id: string, d: DocumentData): Customer {
   return { id, name: str(d.name), phone: str(d.phone), notes: str(d.notes) };
-}
-
-const MOVEMENT_TYPES: MovementType[] = ["rececao", "transferencia", "ajuste", "levantamento", "anulacao"];
-
-export function toMovement(id: string, d: DocumentData): Movement {
-  return {
-    id,
-    itemId: str(d.itemId),
-    itemName: str(d.itemName),
-    storeId: str(d.storeId),
-    qty: num(d.qty),
-    type: MOVEMENT_TYPES.includes(d.type) ? (d.type as MovementType) : "ajuste",
-    orderId: strOrNull(d.orderId),
-    orderNumber: strOrNull(d.orderNumber),
-    reason: strOrNull(d.reason),
-    date: str(d.date),
-    atMs: toMs(d.at) ?? 0,
-    byName: str(d.byName),
-  };
 }
 
 export function toAudit(id: string, d: DocumentData): AuditEntry {

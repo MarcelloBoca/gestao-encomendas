@@ -2,8 +2,8 @@
 // para não exigir índices compostos no Firestore.
 
 import { Timestamp } from "firebase-admin/firestore";
-import { col, orderFromSnap, toAudit, toCategory, toCustomer, toItem, toMovement, toMs, toPayment, toRefund } from "./repo";
-import type { AuditEntry, Category, Customer, Invite, Item, Member, Movement, Order, Payment, Refund } from "../types";
+import { col, orderFromSnap, toAudit, toCustomer, toMs, toPayment, toRefund } from "./repo";
+import type { AuditEntry, Customer, Invite, Member, Order, Payment, Refund } from "../types";
 
 export async function listOrders(businessId: string, limit = 500): Promise<Order[]> {
   const snap = await col.orders(businessId).orderBy("createdAt", "desc").limit(limit).get();
@@ -46,21 +46,6 @@ export async function getOrderBundle(businessId: string, orderId: string): Promi
 export async function getPayment(businessId: string, paymentId: string): Promise<Payment | null> {
   const snap = await col.payments(businessId).doc(paymentId).get();
   return snap.exists ? toPayment(snap.id, snap.data() ?? {}) : null;
-}
-
-export async function listItems(businessId: string): Promise<Item[]> {
-  const snap = await col.items(businessId).get();
-  return snap.docs.map((d) => toItem(d.id, d.data())).sort((a, b) => a.name.localeCompare(b.name, "pt"));
-}
-
-export async function getItem(businessId: string, itemId: string): Promise<Item | null> {
-  const snap = await col.items(businessId).doc(itemId).get();
-  return snap.exists ? toItem(snap.id, snap.data() ?? {}) : null;
-}
-
-export async function listCategories(businessId: string): Promise<Category[]> {
-  const snap = await col.categories(businessId).get();
-  return snap.docs.map((d) => toCategory(d.id, d.data())).sort((a, b) => a.name.localeCompare(b.name, "pt"));
 }
 
 export async function listCustomers(businessId: string): Promise<Customer[]> {
@@ -110,14 +95,6 @@ export async function auditSince(businessId: string, sinceMs: number): Promise<A
     .orderBy("at", "desc")
     .get();
   return snap.docs.map((d) => toAudit(d.id, d.data()));
-}
-
-export async function movementsForItem(businessId: string, itemId: string, limit = 40): Promise<Movement[]> {
-  const snap = await col.movements(businessId).where("itemId", "==", itemId).get();
-  return snap.docs
-    .map((d) => toMovement(d.id, d.data()))
-    .sort((a, b) => b.atMs - a.atMs)
-    .slice(0, limit);
 }
 
 export async function listMembers(businessId: string): Promise<Member[]> {

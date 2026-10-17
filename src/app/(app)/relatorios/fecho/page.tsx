@@ -158,7 +158,7 @@ export default async function CashClosePage({ searchParams }: { searchParams: Pr
           <span className="row-title">
             {corrections.length === 0 ? "Sem correções neste dia" : `${corrections.length} ${corrections.length === 1 ? "correção" : "correções"} neste dia`}
           </span>
-          <span className="row-sub">Estornos, reembolsos, ajustes e cancelamentos, com motivo</span>
+          <span className="row-sub">Estornos, reembolsos, cancelamentos e outras correções, com motivo</span>
         </span>
         <Icon name="chevron" size={18} />
       </Link>

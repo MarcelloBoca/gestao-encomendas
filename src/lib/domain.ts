@@ -1,6 +1,6 @@
 // Regras de negócio puras (sem Firestore), cobertas por testes unitários.
 
-import type { FinancialStatus, OrderLine } from "./types";
+import type { FinancialStatus, Fulfillment } from "./types";
 
 /** Erro com mensagem para mostrar ao utilizador. */
 export class UserError extends Error {
@@ -10,18 +10,8 @@ export class UserError extends Error {
   }
 }
 
-export function subtotalOf(lines: { priceCents: number; qty: number }[]): number {
+export function totalOf(lines: { priceCents: number; qty: number }[]): number {
   return lines.reduce((sum, line) => sum + line.priceCents * line.qty, 0);
-}
-
-export function computeTotals(
-  lines: { priceCents: number; qty: number }[],
-  discountCents: number,
-): { subtotalCents: number; totalCents: number } {
-  const subtotalCents = subtotalOf(lines);
-  if (discountCents < 0) throw new UserError("O desconto não pode ser negativo.");
-  if (discountCents > subtotalCents) throw new UserError("O desconto não pode ser maior que o subtotal.");
-  return { subtotalCents, totalCents: subtotalCents - discountCents };
 }
 
 export function balanceOf(totalCents: number, paidCents: number): number {
@@ -35,146 +25,59 @@ export function financialStatus(totalCents: number, paidCents: number): Financia
   return "paid";
 }
 
-export function fulfillmentFromLines(lines: { qty: number; reserved: number }[]): "awaiting" | "ready" {
-  return lines.length > 0 && lines.every((line) => line.reserved >= line.qty) ? "ready" : "awaiting";
+/** Percentagem paga, de 0 a 100 (arredondada para baixo, para não mostrar 100% com saldo em falta). */
+export function paidPercent(totalCents: number, paidCents: number): number {
+  if (totalCents <= 0) return 100;
+  return Math.max(0, Math.min(100, Math.floor((paidCents / totalCents) * 100)));
 }
 
-/** Chave usada para encontrar encomendas a aguardar mercadoria numa loja. */
-export function awaitingKey(storeId: string): string {
-  return `${storeId}|awaiting`;
+export function isOpen(fulfillment: Fulfillment): boolean {
+  return fulfillment === "awaiting" || fulfillment === "ready";
 }
 
-export interface WaitingOrder {
-  id: string;
-  createdAtMs: number;
-  lines: OrderLine[];
-}
+export type CollectBlocker = "balance" | "arrival";
 
-export interface AllocationChange {
-  orderId: string;
-  lineId: string;
-  qty: number;
-}
-
-/**
- * Reserva `available` unidades de um artigo para as encomendas em espera, da mais antiga para a mais recente.
- * Altera `reserved` nas linhas das encomendas recebidas.
- */
-export function allocateFifo(
-  itemId: string,
-  available: number,
-  orders: WaitingOrder[],
-): { allocated: number; changes: AllocationChange[] } {
-  let remaining = Math.max(0, Math.floor(available));
-  const changes: AllocationChange[] = [];
-  const sorted = [...orders].sort((a, b) => a.createdAtMs - b.createdAtMs || a.id.localeCompare(b.id));
-
-  for (const order of sorted) {
-    if (remaining <= 0) break;
-    for (const line of order.lines) {
-      if (remaining <= 0) break;
-      if (line.itemId !== itemId) continue;
-      const need = line.qty - line.reserved;
-      if (need <= 0) continue;
-      const give = Math.min(need, remaining);
-      line.reserved += give;
-      remaining -= give;
-      changes.push({ orderId: order.id, lineId: line.id, qty: give });
-    }
-  }
-
-  return { allocated: Math.max(0, Math.floor(available)) - remaining, changes };
-}
-
-/** Reserva o stock disponível para linhas novas. `pool` = disponível por artigo; é alterado. */
-export function reserveFromPool(lines: OrderLine[], pool: Map<string, number>): void {
-  for (const line of lines) {
-    const need = line.qty - line.reserved;
-    if (need <= 0) continue;
-    const available = pool.get(line.itemId) ?? 0;
-    const take = Math.min(need, Math.max(0, available));
-    line.reserved += take;
-    pool.set(line.itemId, available - take);
-  }
+/** O que ainda impede o levantamento: saldo em falta e/ou mercadoria por chegar. */
+export function collectBlockers(order: { totalCents: number; paidCents: number; fulfillment: Fulfillment }): CollectBlocker[] {
+  const blockers: CollectBlocker[] = [];
+  if (balanceOf(order.totalCents, order.paidCents) > 0) blockers.push("balance");
+  if (order.fulfillment === "awaiting") blockers.push("arrival");
+  return blockers;
 }
 
 export interface LineInput {
   lineId?: string;
-  itemId: string;
   name: string;
   priceCents: number;
   qty: number;
 }
 
-/**
- * Aplica a edição das linhas de uma encomenda.
- * Liberta reservas de linhas reduzidas ou removidas, depois reserva do disponível para o que falta.
- * `pool` (disponível por artigo) é alterado e fica com o que sobra para outras encomendas.
- * Devolve as linhas novas e a variação do stock reservado por artigo.
- */
-export function editLines(
-  oldLines: OrderLine[],
-  inputs: LineInput[],
-  pool: Map<string, number>,
-  newId: () => string,
-): { lines: OrderLine[]; reservedDelta: Map<string, number> } {
-  const oldById = new Map(oldLines.map((line) => [line.id, line]));
-  const kept = new Set<string>();
-  const reservedDelta = new Map<string, number>();
-  const addDelta = (itemId: string, qty: number) => reservedDelta.set(itemId, (reservedDelta.get(itemId) ?? 0) + qty);
-  const release = (itemId: string, qty: number) => {
-    if (qty <= 0) return;
-    pool.set(itemId, (pool.get(itemId) ?? 0) + qty);
-    addDelta(itemId, -qty);
-  };
-
-  const lines: OrderLine[] = inputs.map((input) => {
-    const old = input.lineId ? oldById.get(input.lineId) : undefined;
-    if (!old) {
-      return { id: newId(), itemId: input.itemId, name: input.name, priceCents: input.priceCents, qty: input.qty, reserved: 0 };
+/** Limpa e valida as linhas escritas à mão. Lança UserError com a primeira falha. */
+export function cleanLines(inputs: LineInput[]): LineInput[] {
+  if (inputs.length === 0) throw new UserError("Adicione pelo menos um artigo.");
+  if (inputs.length > 60) throw new UserError("Demasiados artigos numa encomenda.");
+  return inputs.map((input, index) => {
+    const name = input.name.replace(/\s+/g, " ").trim().slice(0, 160);
+    if (!name) throw new UserError(`Escreva a descrição do artigo ${index + 1}.`);
+    if (!Number.isInteger(input.qty) || input.qty < 1 || input.qty > 10_000) {
+      throw new UserError(`A quantidade do artigo ${index + 1} tem de ser um número inteiro de 1 a 10 000.`);
     }
-    kept.add(old.id);
-    if (old.itemId !== input.itemId) {
-      release(old.itemId, old.reserved);
-      return { id: old.id, itemId: input.itemId, name: input.name, priceCents: input.priceCents, qty: input.qty, reserved: 0 };
+    if (!Number.isInteger(input.priceCents) || input.priceCents < 0) {
+      throw new UserError(`O preço do artigo ${index + 1} não é válido.`);
     }
-    const reserved = Math.min(old.reserved, input.qty);
-    release(old.itemId, old.reserved - reserved);
-    return { id: old.id, itemId: input.itemId, name: input.name, priceCents: input.priceCents, qty: input.qty, reserved };
+    return { ...input, name };
   });
-
-  for (const old of oldLines) {
-    if (!kept.has(old.id)) release(old.itemId, old.reserved);
-  }
-
-  for (const line of lines) {
-    const need = line.qty - line.reserved;
-    if (need <= 0) continue;
-    const available = pool.get(line.itemId) ?? 0;
-    const take = Math.min(need, Math.max(0, available));
-    if (take <= 0) continue;
-    line.reserved += take;
-    pool.set(line.itemId, available - take);
-    addDelta(line.itemId, take);
-  }
-
-  return { lines, reservedDelta };
-}
-
-/** Quantidades em falta (sem reserva) por artigo numa lista de encomendas em espera. */
-export function missingByItem(orders: { lines: { itemId: string; qty: number; reserved: number }[] }[]): Map<string, number> {
-  const missing = new Map<string, number>();
-  for (const order of orders) {
-    for (const line of order.lines) {
-      const need = line.qty - line.reserved;
-      if (need > 0) missing.set(line.itemId, (missing.get(line.itemId) ?? 0) + need);
-    }
-  }
-  return missing;
 }
 
 export function ageBucket(days: number): "0-30" | "31-60" | "60+" {
   if (days <= 30) return "0-30";
   if (days <= 60) return "31-60";
   return "60+";
+}
+
+/** "Bom dia" das 5h às 12h, "Boa tarde" até às 19h, depois "Boa noite". */
+export function greeting(hour: number): string {
+  if (hour >= 5 && hour < 12) return "Bom dia";
+  if (hour >= 12 && hour < 19) return "Boa tarde";
+  return "Boa noite";
 }

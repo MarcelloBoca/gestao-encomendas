@@ -1,22 +1,22 @@
-# Gestão de Encomendas
+# Sola.chic: Sistema de Gestão de Loja
 
-App web instalável (iPhone e Android) para lojas que aceitam encomendas, cobram em parcelas e entregam a mercadoria quando chega e está paga. Construída a partir do PRD v2.
+App web instalável (iPhone e Android) para a Sola.chic aceitar encomendas, cobrar em parcelas e entregar a mercadoria quando chega e está paga.
 
 ## O que faz
 
-- Encomendas com número por loja (ex.: MAP-0042), cliente sugerido pelo telefone, desconto e data prevista de chegada.
+- Encomendas com número por loja (ex.: SOL-0042), cliente sugerida pelo telefone e artigos escritos à mão (descrição, quantidade e preço), sem catálogo.
 - Pagamentos em parcelas (Numerário, M-Pesa, e-Mola, mKesh, Transferência, Outro), estornos e reembolsos, sem apagar nada.
-- Receção de mercadoria com reserva automática para as encomendas mais antigas; ajustes e transferências entre lojas.
-- Levantamento só com a encomenda paga e pronta; anulação de levantamento com motivo.
+- Chegada da mercadoria marcada à mão, no detalhe da encomenda ou várias de uma vez em "Mercadoria chegou".
+- Levantamento só com a encomenda paga e com a mercadoria na loja; anulação de levantamento com motivo.
 - Avisos e comprovativos por WhatsApp (abre o WhatsApp com a mensagem escrita).
-- Relatórios: painel por período, fecho de caixa, dívidas por antiguidade, prontas por levantar, artigos a pedir, correções.
+- Relatórios: recebido por dia ou semana, por método, fecho de caixa, dívidas por antiguidade, prontas por levantar, correções.
 - Login Google, vários utilizadores e lojas; o proprietário é o único que remove utilizadores.
 
 ## Tecnologia
 
 - Next.js 16 (App Router, server actions) no Vercel.
 - Firebase Authentication (Google) e Firestore. Todas as leituras e escritas passam pelo servidor com o Firebase Admin; as regras do Firestore recusam acesso direto.
-- Pagamentos, reservas e movimentos de stock são gravados em transações, com uma chave única por ação para não duplicar com toques repetidos.
+- Encomendas, pagamentos e levantamentos são gravados em transações, com uma chave única por ação para não duplicar com toques repetidos.
 - Valores guardados em centavos (inteiros).
 
 ## Variáveis de ambiente (Vercel)

@@ -25,33 +25,12 @@ export interface Store {
   archived: boolean;
 }
 
-export interface Category {
-  id: string;
-  name: string;
-  archived: boolean;
-}
-
-export interface StockLevel {
-  physical: number;
-  reserved: number;
-}
-
-export interface Item {
-  id: string;
-  name: string;
-  categoryId: string | null;
-  priceCents: number;
-  archived: boolean;
-  stock: Record<string, StockLevel>;
-}
-
 export interface OrderLine {
   id: string;
-  itemId: string;
+  /** Descrição livre do artigo, tal como aparece no comprovativo. */
   name: string;
   priceCents: number;
   qty: number;
-  reserved: number;
 }
 
 export interface Order {
@@ -63,9 +42,6 @@ export interface Order {
   customerPhone: string;
   createdAtMs: number;
   createdDate: string;
-  expectedDate: string | null;
-  discountCents: number;
-  subtotalCents: number;
   totalCents: number;
   paymentsCents: number;
   refundsCents: number;
@@ -73,7 +49,9 @@ export interface Order {
   retainedCents: number;
   fulfillment: Fulfillment;
   lines: OrderLine[];
+  /** Quando a mercadoria foi marcada como chegada (encomenda pronta). */
   readyAtMs: number | null;
+  readyByName: string | null;
   collectedAtMs: number | null;
   collectedDate: string | null;
   collectedByName: string | null;
@@ -133,23 +111,6 @@ export interface Invite {
   createdAtMs: number;
 }
 
-export type MovementType = "rececao" | "transferencia" | "ajuste" | "levantamento" | "anulacao";
-
-export interface Movement {
-  id: string;
-  itemId: string;
-  itemName: string;
-  storeId: string;
-  qty: number;
-  type: MovementType;
-  orderId: string | null;
-  orderNumber: string | null;
-  reason: string | null;
-  date: string;
-  atMs: number;
-  byName: string;
-}
-
 export interface AuditEntry {
   id: string;
   kind: "correcao" | "edicao" | "utilizadores";
@@ -178,8 +139,7 @@ export interface ReadyOrderInfo {
   paidCents: number;
 }
 
-export interface ReceiptState extends ActionState {
-  received?: { name: string; qty: number }[];
+export interface ArrivalState extends ActionState {
   ready?: ReadyOrderInfo[];
   storeName?: string;
 }

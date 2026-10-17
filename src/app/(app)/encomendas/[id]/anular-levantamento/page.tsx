@@ -33,7 +33,7 @@ export default async function UndoCollectionPage({ params }: { params: Promise<{
           <input type="hidden" name="key" value={randomUUID()} />
           <input type="hidden" name="orderId" value={order.id} />
           <Notice tone="warn">
-            Os artigos voltam ao stock da loja, reservados para esta encomenda, que regressa a Pronta para levantar.
+            A encomenda regressa a Pronta para levantar. Os pagamentos mantêm-se.
           </Notice>
           <div className="field">
             <label className="label" htmlFor="reason">
