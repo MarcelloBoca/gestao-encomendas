@@ -1,0 +1,11 @@
+rules_version = '2';
+
+// Toda a leitura e escrita é feita pelo servidor (Firebase Admin), que valida a sessão e o negócio.
+// O telemóvel nunca acede diretamente ao Firestore, por isso as regras recusam tudo.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
