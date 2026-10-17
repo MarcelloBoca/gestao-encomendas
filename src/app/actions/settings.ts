@@ -9,6 +9,7 @@ import { DEFAULT_TZ } from "@/lib/dates";
 import { UserError } from "@/lib/domain";
 import { STORE_COOKIE, forgetContext, getContext, requireSessionUser } from "@/lib/session";
 import { col } from "@/lib/server/repo";
+import { hashPassword, validateNewPassword, validateUsername } from "@/lib/server/password";
 import { required, text, toActionError, writeAudit } from "@/lib/server/tx";
 import type { ActionState } from "@/lib/types";
 
@@ -20,12 +21,6 @@ function parsePrefix(fd: FormData): string {
   return prefix;
 }
 
-function parseEmail(fd: FormData): string {
-  const email = text(fd, "email", 200).toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new UserError("Indique um email válido.");
-  return email;
-}
-
 export async function createBusiness(_prev: ActionState, fd: FormData): Promise<ActionState> {
   try {
     const user = await requireSessionUser();
@@ -33,12 +28,11 @@ export async function createBusiness(_prev: ActionState, fd: FormData): Promise<
     const storeName = required(fd, "storeName", "O nome da loja", 80);
     const prefix = parsePrefix(fd);
     const userRef = col.users().doc(user.uid);
-    const inviteRef = col.invites().doc(user.email.toLowerCase());
 
     await db().runTransaction(async (tx) => {
-      const [userSnap, inviteSnap] = await tx.getAll(userRef, inviteRef);
-      if (userSnap.exists && userSnap.get("businessId")) throw new UserError("A sua conta já pertence a um negócio.");
-      if (inviteSnap.exists) throw new UserError("Tem um convite pendente. Aceite o convite em vez de criar um negócio novo.");
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) throw new UserError("Esta conta já não tem acesso. Entre de novo.");
+      if (userSnap.get("businessId")) throw new UserError("A sua conta já pertence a um negócio.");
 
       const businessRef = db().collection("businesses").doc();
       tx.set(businessRef, {
@@ -55,39 +49,7 @@ export async function createBusiness(_prev: ActionState, fd: FormData): Promise<
         archived: false,
         createdAt: FieldValue.serverTimestamp(),
       });
-      tx.set(userRef, {
-        email: user.email,
-        name: user.name,
-        businessId: businessRef.id,
-        createdAt: FieldValue.serverTimestamp(),
-      });
-    });
-  } catch (error) {
-    return toActionError(error);
-  }
-  forgetContext();
-  revalidatePath("/", "layout");
-  redirect("/");
-}
-
-export async function acceptInvite(_prev: ActionState, fd: FormData): Promise<ActionState> {
-  void fd;
-  try {
-    const user = await requireSessionUser();
-    const userRef = col.users().doc(user.uid);
-    const inviteRef = col.invites().doc(user.email.toLowerCase());
-    await db().runTransaction(async (tx) => {
-      const [userSnap, inviteSnap] = await tx.getAll(userRef, inviteRef);
-      if (!inviteSnap.exists) throw new UserError("O convite já não existe. Peça a quem o convidou para enviar outro.");
-      if (userSnap.exists && userSnap.get("businessId")) throw new UserError("A sua conta já pertence a um negócio.");
-      const businessId = String(inviteSnap.get("businessId"));
-      tx.set(userRef, { email: user.email, name: user.name, businessId, createdAt: FieldValue.serverTimestamp() });
-      tx.delete(inviteRef);
-      writeAudit(tx, businessId, { uid: user.uid, name: user.name }, {
-        kind: "utilizadores",
-        action: "convite_aceite",
-        label: `${user.name || user.email} entrou no negócio`,
-      });
+      tx.set(userRef, { businessId: businessRef.id, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     });
   } catch (error) {
     return toActionError(error);
@@ -148,52 +110,86 @@ export async function setStoreArchived(_prev: ActionState, fd: FormData): Promis
   }
 }
 
-export async function inviteUser(_prev: ActionState, fd: FormData): Promise<ActionState> {
+function ownerOnly(ctx: { isOwner: boolean }): void {
+  if (!ctx.isOwner) throw new UserError("Só a administradora pode gerir as contas.");
+}
+
+function rawPassword(fd: FormData, name: string): string {
+  const value = fd.get(name);
+  return typeof value === "string" ? value.slice(0, 200) : "";
+}
+
+/** A administradora cria uma conta. A pessoa tem de mudar a palavra-passe na primeira entrada. */
+export async function createAccount(_prev: ActionState, fd: FormData): Promise<ActionState> {
   try {
     const ctx = await getContext();
-    const email = parseEmail(fd);
-    const existing = await col.users().where("email", "==", email).limit(1).get();
-    if (!existing.empty) {
-      const businessId = String(existing.docs[0].get("businessId") ?? "");
-      throw new UserError(
-        businessId === ctx.businessId ? "Esta pessoa já faz parte do negócio." : "Esta conta já pertence a outro negócio.",
-      );
-    }
-    const inviteRef = col.invites().doc(email);
+    ownerOnly(ctx);
+    const name = required(fd, "name", "O nome", 80);
+    const username = validateUsername(text(fd, "username", 64));
+    const password = validateNewPassword(rawPassword(fd, "password"));
+    const passwordHash = await hashPassword(password);
+    const userRef = col.users().doc();
+    const loginRef = col.logins().doc(username);
+
     await db().runTransaction(async (tx) => {
-      const snap = await tx.get(inviteRef);
-      if (snap.exists && snap.get("businessId") !== ctx.businessId) {
-        throw new UserError("Este email já tem um convite pendente de outro negócio.");
-      }
-      tx.set(inviteRef, {
+      const existing = await tx.get(loginRef);
+      if (existing.exists) throw new UserError(`O utilizador ${username} já existe. Escolha outro.`);
+      tx.set(loginRef, { uid: userRef.id, passwordHash, failed: 0, lockedUntil: null, createdAt: FieldValue.serverTimestamp() });
+      tx.set(userRef, {
         businessId: ctx.businessId,
-        businessName: ctx.businessName,
-        invitedByUid: ctx.uid,
-        invitedByName: ctx.name,
+        name,
+        username,
+        mustChangePassword: true,
+        sessionVersion: 1,
+        createdByUid: ctx.uid,
         createdAt: FieldValue.serverTimestamp(),
       });
       writeAudit(tx, ctx.businessId, { uid: ctx.uid, name: ctx.name }, {
         kind: "utilizadores",
-        action: "convite",
-        label: `Convite enviado para ${email}`,
+        action: "conta_criada",
+        label: `Conta criada para ${name} (${username})`,
       });
     });
     revalidatePath("/definicoes");
-    return { ok: true, message: `Convite criado. Peça a ${email} para entrar na app com essa conta Google.` };
+    return { ok: true, message: `Conta criada. Diga a ${name} para entrar com o utilizador ${username} e a palavra-passe que escolheu; vai ter de a mudar na primeira entrada.` };
   } catch (error) {
     return toActionError(error);
   }
 }
 
-export async function cancelInvite(_prev: ActionState, fd: FormData): Promise<ActionState> {
+/** A administradora define uma palavra-passe temporária para uma conta (por exemplo, quando a pessoa a esqueceu). */
+export async function resetPassword(_prev: ActionState, fd: FormData): Promise<ActionState> {
   try {
     const ctx = await getContext();
-    const email = parseEmail(fd);
-    const ref = col.invites().doc(email);
-    const snap = await ref.get();
-    if (snap.exists && snap.get("businessId") === ctx.businessId) await ref.delete();
+    ownerOnly(ctx);
+    const uid = required(fd, "uid", "A conta", 128);
+    if (uid === ctx.uid) throw new UserError("Para a sua própria conta, use Mudar palavra-passe.");
+    const password = validateNewPassword(rawPassword(fd, "password"));
+    const passwordHash = await hashPassword(password);
+    const userRef = col.users().doc(uid);
+
+    let name = "";
+    await db().runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists || snap.get("businessId") !== ctx.businessId) throw new UserError("Esta conta não pertence ao negócio.");
+      const username = String(snap.get("username") ?? "");
+      if (!username) throw new UserError("Esta é uma conta antiga do Google. Crie uma conta nova para esta pessoa e remova a antiga.");
+      name = String(snap.get("name") || username);
+      tx.update(col.logins().doc(username), { passwordHash, failed: 0, lockedUntil: null, updatedAt: FieldValue.serverTimestamp() });
+      tx.update(userRef, {
+        mustChangePassword: true,
+        sessionVersion: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      writeAudit(tx, ctx.businessId, { uid: ctx.uid, name: ctx.name }, {
+        kind: "utilizadores",
+        action: "palavra_passe_reposta",
+        label: `Palavra-passe reposta para ${name} (${username})`,
+      });
+    });
+    forgetContext();
     revalidatePath("/definicoes");
-    return { ok: true, message: "Convite cancelado." };
+    return { ok: true, message: `Palavra-passe temporária definida para ${name}. Vai ter de a mudar na próxima entrada.` };
   } catch (error) {
     return toActionError(error);
   }
@@ -202,23 +198,25 @@ export async function cancelInvite(_prev: ActionState, fd: FormData): Promise<Ac
 export async function removeUser(_prev: ActionState, fd: FormData): Promise<ActionState> {
   try {
     const ctx = await getContext();
-    if (!ctx.isOwner) throw new UserError("Só o proprietário pode remover utilizadores.");
+    ownerOnly(ctx);
     const uid = required(fd, "uid", "O utilizador", 128);
-    if (uid === ctx.ownerUid) throw new UserError("O proprietário não pode ser removido.");
+    if (uid === ctx.ownerUid) throw new UserError("A administradora não pode ser removida.");
     const ref = col.users().doc(uid);
     await db().runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists || snap.get("businessId") !== ctx.businessId) throw new UserError("Este utilizador não pertence ao negócio.");
+      const username = String(snap.get("username") ?? "");
       tx.delete(ref);
+      if (username) tx.delete(col.logins().doc(username));
       writeAudit(tx, ctx.businessId, { uid: ctx.uid, name: ctx.name }, {
         kind: "utilizadores",
         action: "remocao",
-        label: `${String(snap.get("name") || snap.get("email"))} foi removido do negócio`,
+        label: `${String(snap.get("name") || username || snap.get("email"))} deixou de ter acesso`,
       });
     });
     forgetContext();
     revalidatePath("/definicoes");
-    return { ok: true, message: "Utilizador removido." };
+    return { ok: true, message: "Conta removida. A pessoa deixa de conseguir entrar." };
   } catch (error) {
     return toActionError(error);
   }
@@ -227,24 +225,25 @@ export async function removeUser(_prev: ActionState, fd: FormData): Promise<Acti
 export async function transferOwnership(_prev: ActionState, fd: FormData): Promise<ActionState> {
   try {
     const ctx = await getContext();
-    if (!ctx.isOwner) throw new UserError("Só o proprietário pode transferir a propriedade.");
+    ownerOnly(ctx);
     const uid = required(fd, "uid", "O utilizador", 128);
-    if (uid === ctx.uid) throw new UserError("Já é o proprietário.");
+    if (uid === ctx.uid) throw new UserError("Já é a administradora.");
     const userRef = col.users().doc(uid);
     const businessRef = db().collection("businesses").doc(ctx.businessId);
     await db().runTransaction(async (tx) => {
       const snap = await tx.get(userRef);
       if (!snap.exists || snap.get("businessId") !== ctx.businessId) throw new UserError("Este utilizador não pertence ao negócio.");
+      if (!snap.get("username")) throw new UserError("Esta conta antiga do Google já não consegue entrar. Crie primeiro uma conta com utilizador.");
       tx.update(businessRef, { ownerUid: uid });
       writeAudit(tx, ctx.businessId, { uid: ctx.uid, name: ctx.name }, {
         kind: "utilizadores",
         action: "propriedade",
-        label: `A propriedade passou para ${String(snap.get("name") || snap.get("email"))}`,
+        label: `A administração passou para ${String(snap.get("name") || snap.get("username") || snap.get("email"))}`,
       });
     });
     forgetContext();
     revalidatePath("/", "layout");
-    return { ok: true, message: "Propriedade transferida." };
+    return { ok: true, message: "A administração foi transferida." };
   } catch (error) {
     return toActionError(error);
   }

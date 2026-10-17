@@ -101,14 +101,10 @@ export interface Customer {
 
 export interface Member {
   uid: string;
-  email: string;
+  /** Vazio nas contas antigas que entravam com o Google. */
+  username: string;
   name: string;
-}
-
-export interface Invite {
-  email: string;
-  invitedByName: string;
-  createdAtMs: number;
+  mustChangePassword: boolean;
 }
 
 export interface AuditEntry {

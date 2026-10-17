@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, startTransition, useActionState, useContext } from "react";
+import { createContext, startTransition, useActionState, useContext, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/lib/types";
 
@@ -75,15 +75,21 @@ export function ActionForm({
   children,
   className = "stack-md",
   confirmText,
+  resetOnSuccess = false,
 }: {
   action: (prev: ActionState, formData: FormData) => Promise<ActionState>;
   children: React.ReactNode;
   className?: string;
   confirmText?: string;
+  resetOnSuccess?: boolean;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
   const { state, pending, onSubmit } = useSubmitAction(action, () => !confirmText || window.confirm(confirmText));
+  useEffect(() => {
+    if (resetOnSuccess && state.ok) formRef.current?.reset();
+  }, [state, resetOnSuccess]);
   return (
-    <form onSubmit={onSubmit} className={className}>
+    <form ref={formRef} onSubmit={onSubmit} className={className}>
       <PendingProvider pending={pending}>
         <FormAlert state={state} />
         {children}

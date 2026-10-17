@@ -10,39 +10,39 @@ App web instalável (iPhone e Android) para a Sola.chic aceitar encomendas, cobr
 - Levantamento só com a encomenda paga e com a mercadoria na loja; anulação de levantamento com motivo.
 - Avisos e comprovativos por WhatsApp (abre o WhatsApp com a mensagem escrita).
 - Relatórios: recebido por dia ou semana, por método, fecho de caixa, dívidas por antiguidade, prontas por levantar, correções.
-- Login Google, vários utilizadores e lojas; o proprietário é o único que remove utilizadores.
+- Entrada com utilizador e palavra-passe. A administradora cria as contas em Definições, repõe palavras-passe e remove contas; cada pessoa escolhe a sua palavra-passe na primeira entrada.
 
 ## Tecnologia
 
 - Next.js 16 (App Router, server actions) no Vercel.
-- Firebase Authentication (Google) e Firestore. Todas as leituras e escritas passam pelo servidor com o Firebase Admin; as regras do Firestore recusam acesso direto.
+- Firestore, sempre através do servidor com o Firebase Admin; as regras do Firestore recusam acesso direto.
+- Palavras-passe guardadas com scrypt e sal aleatório; 5 tentativas erradas bloqueiam a conta durante 10 minutos. Sessão num cookie httpOnly assinado; mudar a palavra-passe termina as outras sessões.
 - Encomendas, pagamentos e levantamentos são gravados em transações, com uma chave única por ação para não duplicar com toques repetidos.
 - Valores guardados em centavos (inteiros).
 
 ## Variáveis de ambiente (Vercel)
 
-| Variável | Onde encontrar |
+| Variável | Para quê |
 | --- | --- |
-| `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase › Definições do projeto › App Web |
-| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | idem (`<projeto>.firebaseapp.com`) |
-| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | idem |
-| `NEXT_PUBLIC_FIREBASE_APP_ID` | idem |
 | `FIREBASE_CLIENT_EMAIL` | ficheiro JSON da conta de serviço (`client_email`) |
 | `FIREBASE_PRIVATE_KEY` | ficheiro JSON da conta de serviço (`private_key`), colado tal como está |
+| `SETUP_CODE` | código para criar a primeira conta (administradora) em `/primeiro-acesso`; deixa de servir depois disso |
+| `SESSION_SECRET` | opcional; chave das sessões (por omissão é derivada da chave privada) |
 
-As duas últimas são segredos e são as únicas obrigatórias: só no Vercel, nunca no código. A configuração pública do Firebase (`NEXT_PUBLIC_*`) já tem valores por omissão no código para o projeto `gestao-encomendas-2a060`.
+Todas são segredos: só no Vercel, nunca no código.
 
-## Configuração no Firebase
+## Primeiro acesso
 
-1. Authentication › Sign-in method: ativar Google.
-2. Authentication › Settings › Authorized domains: acrescentar o domínio do Vercel (ex.: `gestao-encomendas.vercel.app`).
-3. Firestore: criar a base de dados e publicar as regras de `firestore.rules`.
+1. No Firestore, criar a base de dados e publicar as regras de `firestore.rules`.
+2. Definir `SETUP_CODE` no Vercel e fazer Redeploy.
+3. Abrir `/primeiro-acesso`, escrever o código e criar a conta da administradora. Se já existir um negócio, a conta fica ligada a ele.
+4. A administradora cria as outras contas em Definições › Contas.
 
 ## Desenvolvimento
 
 ```bash
 npm install
-npm test        # regras de negócio (reservas, saldos, valores, datas)
+npm test        # regras de negócio (saldos, valores, datas, palavras-passe)
 npm run dev
 ```
 

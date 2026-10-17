@@ -13,8 +13,10 @@ export const SESSION_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface SessionUser {
   uid: string;
+  /** Nome de utilizador. */
   email: string;
   name: string;
+  version?: number;
 }
 
 export interface Ctx extends SessionUser {
@@ -51,6 +53,9 @@ export function storeFromDoc(id: string, data: DocumentData | undefined): Store 
 
 interface BaseContext {
   name: string;
+  username: string;
+  sessionVersion: number;
+  mustChangePassword: boolean;
   businessId: string;
   businessName: string;
   ownerUid: string;
@@ -68,20 +73,26 @@ export function forgetContext(): void {
   baseCache.clear();
 }
 
-async function loadBase(user: SessionUser): Promise<BaseContext | null> {
+type BaseResult = BaseContext | "sem-conta" | "sem-negocio";
+
+async function loadBase(user: SessionUser): Promise<BaseResult> {
   const hit = baseCache.get(user.uid);
   if (hit && Date.now() - hit.at < BASE_TTL_MS) return hit;
 
   const userSnap = await db().collection("users").doc(user.uid).get();
-  const businessId = userSnap.exists ? String(userSnap.get("businessId") ?? "") : "";
-  if (!businessId) return null;
+  if (!userSnap.exists) return "sem-conta";
+  const businessId = String(userSnap.get("businessId") ?? "");
+  if (!businessId) return "sem-negocio";
 
   const businessRef = db().collection("businesses").doc(businessId);
   const [businessSnap, storesSnap] = await Promise.all([businessRef.get(), businessRef.collection("stores").get()]);
-  if (!businessSnap.exists) return null;
+  if (!businessSnap.exists) return "sem-negocio";
 
   const base: BaseContext = {
     name: String(userSnap.get("name") || user.name),
+    username: String(userSnap.get("username") ?? ""),
+    sessionVersion: Number(userSnap.get("sessionVersion") ?? 0),
+    mustChangePassword: Boolean(userSnap.get("mustChangePassword")),
     businessId,
     businessName: String(businessSnap.get("name") ?? "Negócio"),
     ownerUid: String(businessSnap.get("ownerUid") ?? ""),
@@ -98,7 +109,11 @@ async function loadBase(user: SessionUser): Promise<BaseContext | null> {
 export const getContext = cache(async (): Promise<Ctx> => {
   const user = await requireSessionUser();
   const base = await loadBase(user);
-  if (!base) redirect("/onboarding");
+  // Conta removida ou palavra-passe mudada noutro aparelho: a sessão deixa de valer.
+  if (base === "sem-conta") redirect("/sair");
+  if (base === "sem-negocio") redirect("/onboarding");
+  if (base.sessionVersion !== (user.version ?? 0)) redirect("/sair");
+  if (base.mustChangePassword) redirect("/palavra-passe");
 
   const activeStores = base.stores.filter((store) => !store.archived);
   const jar = await cookies();
@@ -107,6 +122,7 @@ export const getContext = cache(async (): Promise<Ctx> => {
 
   return {
     ...user,
+    email: base.username || user.email,
     name: base.name,
     businessId: base.businessId,
     businessName: base.businessName,

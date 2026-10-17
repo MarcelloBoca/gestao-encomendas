@@ -4,7 +4,13 @@ import { NextResponse, type NextRequest } from "next/server";
 // (getContext) em cada página e ação.
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (pathname === "/login" || pathname.startsWith("/api/session") || pathname === "/api/saude" || pathname.startsWith("/__/auth") || pathname.startsWith("/__/firebase")) {
+  if (
+    pathname === "/login" ||
+    pathname === "/primeiro-acesso" ||
+    pathname === "/sair" ||
+    pathname.startsWith("/api/session") ||
+    pathname === "/api/saude"
+  ) {
     return NextResponse.next();
   }
   if (request.cookies.get("__session")?.value) return NextResponse.next();

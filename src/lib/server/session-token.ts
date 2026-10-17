@@ -6,8 +6,11 @@ import { createHash, createHmac, timingSafeEqual } from "crypto";
 
 export interface SessionPayload {
   uid: string;
+  /** Nome de utilizador (nas sessões antigas do Google, o email). */
   email: string;
   name: string;
+  /** Versão da sessão: muda quando a palavra-passe muda, o que termina as outras sessões. */
+  version?: number;
 }
 
 function secret(): string {
@@ -23,7 +26,9 @@ function sign(data: string): string {
 }
 
 export function createSessionToken(user: SessionPayload, maxAgeMs: number, now: number = Date.now()): string {
-  const body = Buffer.from(JSON.stringify({ u: user.uid, e: user.email, n: user.name, x: now + maxAgeMs })).toString("base64url");
+  const body = Buffer.from(
+    JSON.stringify({ u: user.uid, e: user.email, n: user.name, v: user.version ?? 0, x: now + maxAgeMs }),
+  ).toString("base64url");
   return `${body}.${sign(body)}`;
 }
 
@@ -41,10 +46,21 @@ export function readSessionToken(token: string | undefined | null, now: number =
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
-    const data = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { u?: unknown; e?: unknown; n?: unknown; x?: unknown };
+    const data = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as {
+      u?: unknown;
+      e?: unknown;
+      n?: unknown;
+      v?: unknown;
+      x?: unknown;
+    };
     if (typeof data.u !== "string" || !data.u || typeof data.x !== "number" || data.x <= now) return null;
     const email = typeof data.e === "string" ? data.e : "";
-    return { uid: data.u, email, name: typeof data.n === "string" && data.n ? data.n : email };
+    return {
+      uid: data.u,
+      email,
+      name: typeof data.n === "string" && data.n ? data.n : email,
+      version: typeof data.v === "number" ? data.v : 0,
+    };
   } catch {
     return null;
   }

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { cleanEnv, db, describeFirebaseError, firebaseProjectId, serviceAccessToken, serviceAccountToken, withTimeout } from "@/lib/firebase-admin";
-import { certificateCount } from "@/lib/server/id-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,8 +50,7 @@ export async function GET() {
     chaveComAspas: /^\s*["']/.test(key),
     tamanhoDaChave: key.length,
   };
-  const [certificados, token, firestore, localizacao] = await Promise.all([
-    run("Certificados Google", async () => `${await certificateCount()} certificados de login obtidos`),
+  const [token, firestore, localizacao] = await Promise.all([
     run("Token Google", async () => `token da conta de serviço válido por ${await serviceAccountToken()} s`),
     run("Firestore", async () => {
       // Três leituras seguidas: a primeira inclui abrir a ligação; as outras mostram o tempo de cada ida à base de dados.
@@ -75,7 +73,7 @@ export async function GET() {
     }),
   ]);
   return NextResponse.json(
-    { regiaoDoServidor: process.env.VERCEL_REGION ?? "local", localizacaoFirestore: localizacao.detalhe ?? localizacao.erro, configuracao, certificados, token, firestore },
+    { regiaoDoServidor: process.env.VERCEL_REGION ?? "local", localizacaoFirestore: localizacao.detalhe ?? localizacao.erro, configuracao, token, firestore, codigoDeConfiguracaoDefinido: Boolean(process.env.SETUP_CODE?.trim()) },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

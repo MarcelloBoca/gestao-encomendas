@@ -2,8 +2,8 @@
 // para não exigir índices compostos no Firestore.
 
 import { Timestamp } from "firebase-admin/firestore";
-import { col, orderFromSnap, toAudit, toCustomer, toMs, toPayment, toRefund } from "./repo";
-import type { AuditEntry, Customer, Invite, Member, Order, Payment, Refund } from "../types";
+import { col, orderFromSnap, toAudit, toCustomer, toPayment, toRefund } from "./repo";
+import type { AuditEntry, Customer, Member, Order, Payment, Refund } from "../types";
 
 export async function listOrders(businessId: string, limit = 500): Promise<Order[]> {
   const snap = await col.orders(businessId).orderBy("createdAt", "desc").limit(limit).get();
@@ -100,15 +100,17 @@ export async function auditSince(businessId: string, sinceMs: number): Promise<A
 export async function listMembers(businessId: string): Promise<Member[]> {
   const snap = await col.users().where("businessId", "==", businessId).get();
   return snap.docs
-    .map((d) => ({ uid: d.id, email: String(d.get("email") ?? ""), name: String(d.get("name") ?? "") }))
-    .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email, "pt"));
+    .map((d) => ({
+      uid: d.id,
+      username: String(d.get("username") ?? ""),
+      name: String(d.get("name") ?? ""),
+      mustChangePassword: Boolean(d.get("mustChangePassword")),
+    }))
+    .sort((a, b) => (a.name || a.username).localeCompare(b.name || b.username, "pt"));
 }
 
-export async function listInvites(businessId: string): Promise<Invite[]> {
-  const snap = await col.invites().where("businessId", "==", businessId).get();
-  return snap.docs.map((d) => ({
-    email: d.id,
-    invitedByName: String(d.get("invitedByName") ?? ""),
-    createdAtMs: toMs(d.get("createdAt")) ?? 0,
-  }));
+/** Há pelo menos uma conta com utilizador e palavra-passe? (Antes disso, a entrada mostra o primeiro acesso.) */
+export async function hasAnyLogin(): Promise<boolean> {
+  const snap = await col.logins().limit(1).get();
+  return !snap.empty;
 }

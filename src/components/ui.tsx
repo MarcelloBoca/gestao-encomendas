@@ -165,7 +165,11 @@ export function Notice({ tone, children }: { tone: "ok" | "warn" | "info" | "err
 }
 
 export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  return ((parts[0][0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "")).toUpperCase();
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .map((w) => w.match(/[\p{L}\p{N}]/u)?.[0] ?? "")
+    .filter(Boolean);
+  if (words.length === 0) return "?";
+  return (words[0] + (words.length > 1 ? words[words.length - 1] : "")).toUpperCase();
 }

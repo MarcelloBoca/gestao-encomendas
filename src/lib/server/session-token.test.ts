@@ -14,7 +14,9 @@ describe("sessão assinada", () => {
 
   it("lê de volta uma sessão válida", () => {
     const token = createSessionToken(user, 60_000, 1_000);
-    expect(readSessionToken(token, 2_000)).toEqual(user);
+    expect(readSessionToken(token, 2_000)).toEqual({ ...user, version: 0 });
+    const versioned = createSessionToken({ ...user, version: 3 }, 60_000, 1_000);
+    expect(readSessionToken(versioned, 2_000)).toEqual({ ...user, version: 3 });
   });
 
   it("recusa sessões expiradas", () => {

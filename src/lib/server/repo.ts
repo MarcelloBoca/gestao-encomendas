@@ -17,7 +17,8 @@ export const col = {
   audit: (b: string) => businessRef(b).collection("audit"),
   idempotency: (b: string) => businessRef(b).collection("idempotency"),
   users: () => db().collection("users"),
-  invites: () => db().collection("invites"),
+  /** Contas de acesso: um documento por utilizador (o id é o nome de utilizador). */
+  logins: () => db().collection("logins"),
 };
 
 export function toMs(value: unknown): number | null {
