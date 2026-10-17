@@ -6,6 +6,7 @@ import { col } from "@/lib/server/repo";
 import { writeAudit } from "@/lib/server/tx";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 /** Se a pessoa tiver um convite e ainda não pertencer a um negócio, entra no negócio que a convidou. */
 async function acceptPendingInvite(uid: string, email: string, name: string): Promise<void> {

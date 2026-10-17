@@ -12,8 +12,16 @@ async function startSession(user: User): Promise<string | null> {
     body: JSON.stringify({ idToken }),
   });
   if (response.ok) return null;
-  const body = (await response.json().catch(() => null)) as { error?: string } | null;
-  return body?.error ?? "Não foi possível iniciar sessão.";
+  const text = await response.text().catch(() => "");
+  let body: { error?: string } | null = null;
+  try {
+    body = JSON.parse(text) as { error?: string };
+  } catch {
+    body = null;
+  }
+  if (body?.error) return body.error;
+  const snippet = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 120);
+  return `Não foi possível iniciar sessão (erro ${response.status}${snippet ? `: ${snippet}` : ""}).`;
 }
 
 function friendlyError(error: unknown): string {
