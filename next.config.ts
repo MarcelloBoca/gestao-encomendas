@@ -15,6 +15,10 @@ const nextConfig: NextConfig = {
         source: "/__/auth/:path*",
         destination: `https://${firebaseProjectId}.firebaseapp.com/__/auth/:path*`,
       },
+      {
+        source: "/__/firebase/:path*",
+        destination: `https://${firebaseProjectId}.firebaseapp.com/__/firebase/:path*`,
+      },
     ];
   },
 };
