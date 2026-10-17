@@ -1,8 +1,24 @@
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
-import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
 let adminApp: App | undefined;
+
+/** ID do projeto Firebase (público). */
+export function firebaseProjectId(): string {
+  return (
+    cleanEnv(process.env.FIREBASE_PROJECT_ID) ||
+    cleanEnv(process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) ||
+    "gestao-encomendas-2a060"
+  );
+}
+
+/** Tira espaços e aspas que às vezes ficam ao colar valores no Vercel. */
+export function cleanEnv(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim().replace(/^["']/, "").replace(/["']$/, "").trim();
+  return trimmed || undefined;
+}
+
 let firestore: Firestore | undefined;
 
 function getAdminApp(): App {
@@ -13,9 +29,9 @@ function getAdminApp(): App {
     return adminApp;
   }
 
-  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "gestao-encomendas-2a060";
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const projectId = firebaseProjectId();
+  const clientEmail = cleanEnv(process.env.FIREBASE_CLIENT_EMAIL);
+  const privateKey = cleanEnv(process.env.FIREBASE_PRIVATE_KEY)?.replace(/\\n/g, "\n");
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(
       "Configuração do Firebase em falta no servidor: defina FIREBASE_CLIENT_EMAIL e FIREBASE_PRIVATE_KEY no Vercel.",
@@ -36,10 +52,6 @@ export function db(): Firestore {
     }
   }
   return firestore;
-}
-
-export function adminAuth(): Auth {
-  return getAuth(getAdminApp());
 }
 
 /** Traduz erros de configuração do Firebase numa instrução para quem gere a app; null se não for um desses. */

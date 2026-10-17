@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import type { DecodedIdToken } from "firebase-admin/auth";
 import { FieldValue } from "firebase-admin/firestore";
-import { adminAuth, db, describeFirebaseError, withTimeout } from "@/lib/firebase-admin";
+import { db, describeFirebaseError, firebaseProjectId, withTimeout } from "@/lib/firebase-admin";
 import { SESSION_COOKIE, SESSION_MAX_AGE_MS } from "@/lib/session";
+import { InvalidIdTokenError, verifyFirebaseIdToken } from "@/lib/server/id-token";
+import { createSessionToken } from "@/lib/server/session-token";
 import { col } from "@/lib/server/repo";
 import { writeAudit } from "@/lib/server/tx";
 
@@ -35,23 +36,19 @@ export async function POST(request: Request) {
   if (!idToken) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
 
   try {
-    const decoded: DecodedIdToken = await withTimeout(adminAuth().verifyIdToken(idToken), 10_000, "Verificação do login Google");
-    if (Date.now() / 1000 - decoded.auth_time > 5 * 60) {
+    const user = await withTimeout(verifyFirebaseIdToken(idToken, firebaseProjectId()), 10_000, "Verificação do login Google");
+    if (Date.now() / 1000 - user.authTime > 5 * 60) {
       return NextResponse.json({ error: "Inicie sessão novamente." }, { status: 401 });
     }
-    if (!decoded.email || decoded.email_verified === false) {
+    if (!user.email || !user.emailVerified) {
       return NextResponse.json({ error: "A conta Google não tem um email verificado." }, { status: 403 });
     }
-    const sessionCookie: string = await withTimeout(
-      adminAuth().createSessionCookie(idToken, { expiresIn: SESSION_MAX_AGE_MS }),
-      10_000,
-      "Criação da sessão",
-    );
-    const name = typeof decoded.name === "string" ? decoded.name : decoded.email;
-    await withTimeout(acceptPendingInvite(decoded.uid, decoded.email, name), 10_000, "Firestore");
+
+    await withTimeout(acceptPendingInvite(user.uid, user.email, user.name), 10_000, "Firestore");
+    const token = createSessionToken({ uid: user.uid, email: user.email, name: user.name }, SESSION_MAX_AGE_MS);
 
     const response = NextResponse.json({ ok: true });
-    response.cookies.set(SESSION_COOKIE, sessionCookie, {
+    response.cookies.set(SESSION_COOKIE, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -62,15 +59,18 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Falha no início de sessão", message);
+    if (error instanceof InvalidIdTokenError) {
+      return NextResponse.json({ error: `${message}. Inicie sessão novamente.` }, { status: 401 });
+    }
     const setup = describeFirebaseError(error);
     if (setup) return NextResponse.json({ error: setup }, { status: 500 });
     if (message.includes("sem resposta em")) {
       return NextResponse.json(
-        { error: `${message}. Verifique se o Firestore foi criado e se a chave do servidor no Vercel é a do projeto gestao-encomendas-2a060.` },
+        { error: `${message}. Verifique se o Firestore foi criado e se a chave do servidor no Vercel é a do projeto ${firebaseProjectId()}.` },
         { status: 504 },
       );
     }
-    return NextResponse.json({ error: "Não foi possível iniciar sessão. Tente de novo." }, { status: 401 });
+    return NextResponse.json({ error: `Não foi possível iniciar sessão: ${message.slice(0, 160)}` }, { status: 500 });
   }
 }
 

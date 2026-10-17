@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import type { DocumentData } from "firebase-admin/firestore";
-import { adminAuth, db } from "./firebase-admin";
+import { db } from "./firebase-admin";
+import { readSessionToken } from "./server/session-token";
 import { DEFAULT_TZ } from "./dates";
 import type { Store } from "./types";
 
@@ -30,16 +31,7 @@ export interface Ctx extends SessionUser {
 
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const jar = await cookies();
-  const token = jar.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-  try {
-    const decoded = await adminAuth().verifySessionCookie(token);
-    const email = decoded.email ?? "";
-    const name = typeof decoded.name === "string" && decoded.name ? decoded.name : email;
-    return { uid: decoded.uid, email, name };
-  } catch {
-    return null;
-  }
+  return readSessionToken(jar.get(SESSION_COOKIE)?.value);
 });
 
 export async function requireSessionUser(): Promise<SessionUser> {
