@@ -27,11 +27,10 @@ App web instalável (iPhone e Android) para lojas que aceitam encomendas, cobram
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | idem (`<projeto>.firebaseapp.com`) |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | idem |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | idem |
-| `FIREBASE_PROJECT_ID` | ficheiro JSON da conta de serviço (`project_id`) |
 | `FIREBASE_CLIENT_EMAIL` | ficheiro JSON da conta de serviço (`client_email`) |
 | `FIREBASE_PRIVATE_KEY` | ficheiro JSON da conta de serviço (`private_key`), colado tal como está |
 
-As três últimas são segredos: só no Vercel, nunca no código.
+As duas últimas são segredos e são as únicas obrigatórias: só no Vercel, nunca no código. A configuração pública do Firebase (`NEXT_PUBLIC_*`) já tem valores por omissão no código para o projeto `gestao-encomendas-2a060`.
 
 ## Configuração no Firebase
 
